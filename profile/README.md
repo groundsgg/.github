@@ -1,6 +1,6 @@
-# 🌍 GroundsGG
+# 🌍 groundsgg
 
-**Grounds** is building the foundation for the next generation of multiplayer experiences — a connected platform for creators, developers, and players.  
+**grounds** is building the foundation for the next generation of multiplayer experiences — a connected platform for creators, developers, and players.  
 Our mission is to make high-quality game infrastructure, tools, and worlds accessible to everyone.
 
 ### 🚀 What We’re Working On
@@ -15,6 +15,6 @@ seamlessly bridging players and creators across regions, genres, and worlds.
 
 ### 🌐 Learn More
 🔗 [grounds.gg](https://grounds.gg)  
-📬 lukas@grounds.gg or hendrik@grounds.gg
+📬 hi@grounds.gg
 
-© GroundsGG. All rights reserved.
+© grounds. All rights reserved.
