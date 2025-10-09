@@ -1,4 +1,4 @@
-# 🌍 groundsgg
+# 🌍 grounds.gg
 
 **grounds** is building the foundation for the next generation of multiplayer experiences — a connected platform for creators, developers, and players.  
 Our mission is to make high-quality game infrastructure, tools, and worlds accessible to everyone.
