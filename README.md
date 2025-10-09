@@ -1,28 +1,18 @@
-# 🌍 GroundsGG
+# .github
 
-**Grounds** is building the foundation for the next generation of multiplayer experiences — a connected platform for creators, developers, and players.  
-Our mission is to make high-quality game infrastructure, tools, and worlds accessible to everyone.
+This repository contains GitHub templates and issue forms for the organization.
 
----
+## 📁 Contents
 
-### 🚀 What We’re Working On
-- **Grounds Network** — scalable infrastructure for multiplayer game orchestration  
-- **Grounds SDK** — tools and APIs empowering creators to build, publish, and monetize content  
-- **Creator Portal** — management and analytics for game experiences  
-- **Cockpit** — administrative and operational suite for network governance  
+- **Issue Forms** (`.github/ISSUE_TEMPLATE/`)
+  - `bug_report.yml` - 🐛 Bug report template
+  - `feature_request.yml` - ✨ Feature request template  
+  - `documentation.yml` - 📚 Documentation issue template
+  - `config.yml` - ⚙️ Issue template configuration
 
----
+- **Pull Request Template**
+  - `pull_request_template.md` - 🔄 PR template with semantic commit format
 
-### 💡 Our Vision
-A global platform where creativity and technology meet —  
-seamlessly bridging players and creators across regions, genres, and worlds.
-
----
-
-### 🌐 Learn More
-🔗 [grounds.gg](https://grounds.gg)  
-📬 contact@grounds.gg  
-
----
-
-© GroundsGG. All rights reserved.
+- **Documentation**
+  - `README.md` - 📖 This file
+  - `profile/README.md` - 🌍 Organization profile page
