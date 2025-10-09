@@ -15,6 +15,6 @@ seamlessly bridging players and creators across regions, genres, and worlds.
 
 ### 🌐 Learn More
 🔗 [grounds.gg](https://grounds.gg)  
-📬 contact@grounds.gg  
+📬 lukas@grounds.gg or hendrik@grounds.gg
 
 © GroundsGG. All rights reserved.
