@@ -8,15 +8,6 @@ body:
       value: |
         Thanks for helping improve our documentation! Please provide details about the documentation issue or improvement.
 
-  - type: input
-    id: doc-title
-    attributes:
-      label: 📚 Documentation Title
-      description: A clear and concise title for the documentation issue
-      placeholder: "Brief description of the documentation issue"
-    validations:
-      required: true
-
   - type: textarea
     id: doc-description
     attributes:

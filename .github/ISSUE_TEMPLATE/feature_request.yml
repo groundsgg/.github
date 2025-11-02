@@ -8,15 +8,6 @@ body:
       value: |
         Thanks for suggesting a new feature! Please provide as much detail as possible to help us understand your request.
 
-  - type: input
-    id: feature-title
-    attributes:
-      label: ✨ Feature Title
-      description: A clear and concise title for the feature
-      placeholder: "Brief description of the feature"
-    validations:
-      required: true
-
   - type: textarea
     id: feature-description
     attributes:
