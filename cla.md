@@ -1,20 +1,17 @@
 # 📄 Individual Contributor License Agreement (ICLA)
 
-**Project:** Grounds
-**Maintained by:** Scelus Development (Lukas Jost)
-**Version:** 1.0
-**Effective Date:** 22.12.2025
+- **Project:** Grounds
+- **Maintained by:** Scelus Development (Lukas Jost)
+- **Version:** 1.0
+- **Effective Date:** 22.12.2025
 
 ---
 
 ## 1. Definitions
 
 - **"You"** means the individual submitting a Contribution.
-
 - **"Contribution"** means any work of authorship, including source code, documentation, or other materials, intentionally submitted to the Project.
-
 - **"Project"** means the Grounds project, including all repositories and related materials.
-
 - **"Scelus Development (Lukas Jost)"** means the entity operating and maintaining the Grounds project. ([Imprint](https://scelus.io/de/imprint/))
 
 ## 2. Copyright Ownership
