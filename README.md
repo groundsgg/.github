@@ -16,3 +16,4 @@ This repository contains GitHub templates and issue forms for the organization.
 - **Documentation**
   - `README.md` - 📖 This file
   - `profile/README.md` - 🌍 Organization profile page
+  - `cla.md` - 📄 Individual Contributor License Agreement (ICLA)
