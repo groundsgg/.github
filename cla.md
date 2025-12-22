@@ -1,8 +1,8 @@
 # 📄 Individual Contributor License Agreement (ICLA)
 
-**Project:** Grounds  
-**Maintained by:** Scelus Development  
-**Version:** 1.0  
+**Project:** Grounds
+**Maintained by:** Scelus Development (Lukas Jost)
+**Version:** 1.0
 **Effective Date:** 22.12.2025
 
 ---
@@ -15,7 +15,7 @@
 
 - **"Project"** means the Grounds project, including all repositories and related materials.
 
-- **"Scelus Development"** means the entity operating and maintaining the Grounds project. ([Imprint](https://scelus.io/de/imprint/))
+- **"Scelus Development (Lukas Jost)"** means the entity operating and maintaining the Grounds project. ([Imprint](https://scelus.io/de/imprint/))
 
 ## 2. Copyright Ownership
 
@@ -25,7 +25,7 @@ Nothing in this Agreement transfers ownership of your Contributions to Scelus De
 
 ## 3. License Grant
 
-By submitting a Contribution, you grant Scelus Development a perpetual, worldwide, irrevocable, royalty-free, non-exclusive license to:
+By submitting a Contribution, you grant Scelus Development (Lukas Jost) a perpetual, worldwide, irrevocable, royalty-free, non-exclusive license to:
 
 - use,
 - reproduce,
@@ -39,7 +39,7 @@ your Contributions solely under the open-source license(s) used by the Project.
 
 ## 4. Patent License
 
-You grant Scelus Development a perpetual, worldwide, royalty-free, irrevocable patent license for any patents necessarily infringed by your Contribution, to the extent required to use the Contribution as part of the Project.
+You grant Scelus Development (Lukas Jost) a perpetual, worldwide, royalty-free, irrevocable patent license for any patents necessarily infringed by your Contribution, to the extent required to use the Contribution as part of the Project.
 
 ## 5. Contributor Representations
 
@@ -53,7 +53,7 @@ You represent that:
 
 ## 6. No Obligation
 
-Scelus Development is not obligated to accept, merge, or distribute any Contribution.
+Scelus Development (Lukas Jost) is not obligated to accept, merge, or distribute any Contribution.
 
 ## 7. Disclaimer of Warranty
 
@@ -71,4 +71,4 @@ By submitting a Contribution to the Project, you agree to the terms of this Cont
 
 **Note:** This is a legal document. If you have questions about its terms, please consult with a legal advisor before submitting Contributions.
 
-For contact information and legal details about Scelus Development, please see the [Imprint](https://scelus.io/de/imprint/).
+For contact information and legal details about Scelus Development (Lukas Jost), please see the [Imprint](https://scelus.io/de/imprint/).
