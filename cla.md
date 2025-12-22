@@ -1,4 +1,4 @@
-# 📄 Contributor License Agreement (ICLA)
+# 📄 Individual Contributor License Agreement (ICLA)
 
 **Project:** Grounds  
 **Maintained by:** Scelus Development  
