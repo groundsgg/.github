@@ -12,17 +12,17 @@
 - **"You"** means the individual submitting a Contribution.
 - **"Contribution"** means any work of authorship, including source code, documentation, or other materials, intentionally submitted to the Project.
 - **"Project"** means the Grounds project, including all repositories and related materials.
-- **"Scelus Development (Lukas Jost)"** means the entity operating and maintaining the Grounds project. ([Imprint](https://scelus.io/de/imprint/))
+- **"Project Maintainer"** means the entity operating and maintaining the Grounds project. Currently, this is Scelus Development (Lukas Jost) ([Imprint](https://scelus.io/de/imprint/)). The Project Maintainer may be changed at any time without notice or consent from Contributors.
 
 ## 2. Copyright Ownership
 
 You retain copyright ownership of your Contributions.
 
-Nothing in this Agreement transfers ownership of your Contributions to Scelus Development.
+Nothing in this Agreement transfers ownership of your Contributions to the Project Maintainer.
 
 ## 3. License Grant
 
-By submitting a Contribution, you grant Scelus Development (Lukas Jost) a perpetual, worldwide, irrevocable, royalty-free, non-exclusive license to:
+By submitting a Contribution, you grant the Project Maintainer a perpetual, worldwide, irrevocable, royalty-free, non-exclusive license to:
 
 - use,
 - reproduce,
@@ -36,7 +36,7 @@ your Contributions solely under the open-source license(s) used by the Project.
 
 ## 4. Patent License
 
-You grant Scelus Development (Lukas Jost) a perpetual, worldwide, royalty-free, irrevocable patent license for any patents necessarily infringed by your Contribution, to the extent required to use the Contribution as part of the Project.
+You grant the Project Maintainer a perpetual, worldwide, royalty-free, irrevocable patent license for any patents necessarily infringed by your Contribution, to the extent required to use the Contribution as part of the Project.
 
 ## 5. Contributor Representations
 
@@ -50,17 +50,21 @@ You represent that:
 
 ## 6. No Obligation
 
-Scelus Development (Lukas Jost) is not obligated to accept, merge, or distribute any Contribution.
+The Project Maintainer is not obligated to accept, merge, or distribute any Contribution.
 
-## 7. Disclaimer of Warranty
+## 7. Change of Project Maintainer
+
+The Project Maintainer may be changed, transferred, or assigned at any time without notice or consent from Contributors. All rights and obligations granted under this Agreement will automatically transfer to the new Project Maintainer. Contributors agree that their Contributions may be used, maintained, and distributed by any future Project Maintainer of the Project.
+
+## 8. Disclaimer of Warranty
 
 All Contributions are provided "AS IS", without warranties or conditions of any kind.
 
-## 8. Governing Law
+## 9. Governing Law
 
 This Agreement shall be governed by the laws of the Federal Republic of Germany, excluding conflict-of-law rules.
 
-## 9. Acceptance
+## 10. Acceptance
 
 By submitting a Contribution to the Project, you agree to the terms of this Contributor License Agreement.
 
@@ -68,4 +72,4 @@ By submitting a Contribution to the Project, you agree to the terms of this Cont
 
 **Note:** This is a legal document. If you have questions about its terms, please consult with a legal advisor before submitting Contributions.
 
-For contact information and legal details about Scelus Development (Lukas Jost), please see the [Imprint](https://scelus.io/de/imprint/).
+For contact information and legal details about the current Project Maintainer, please see the [Imprint](https://scelus.io/de/imprint/).
