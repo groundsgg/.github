@@ -170,3 +170,74 @@
 - name: "autorelease: snapshot"
   color: "0969da"
   description: "Indicates a PR should trigger a snapshot release"
+
+# Status workflow labels
+- name: "Backlog"
+  color: "ededed"
+  description: "Item is in the backlog"
+
+- name: "In Progress"
+  color: "fbca04"
+  description: "Work is currently in progress"
+
+- name: "In Review"
+  color: "0e8a16"
+  description: "Item is currently under review"
+
+- name: "Blocked"
+  color: "d73a4a"
+  description: "Item is blocked by dependencies or issues"
+
+- name: "Done"
+  color: "26a641"
+  description: "Item is completed"
+
+# Area labels
+- name: "area:proxy"
+  color: "1d76db"
+  description: "Related to proxy functionality"
+
+- name: "area:paper"
+  color: "1d76db"
+  description: "Related to Paper server"
+
+- name: "area:minestom"
+  color: "1d76db"
+  description: "Related to Minestom server"
+
+- name: "area:agones"
+  color: "1d76db"
+  description: "Related to Agones game server orchestration"
+
+- name: "area:resourcepack"
+  color: "1d76db"
+  description: "Related to resource pack functionality"
+
+- name: "area:lobby"
+  color: "1d76db"
+  description: "Related to lobby functionality"
+
+- name: "area:infra"
+  color: "1d76db"
+  description: "Related to infrastructure"
+
+- name: "area:docs"
+  color: "1d76db"
+  description: "Related to documentation"
+
+- name: "area:web"
+  color: "1d76db"
+  description: "Related to web functionality"
+
+- name: "area:api"
+  color: "1d76db"
+  description: "Related to API functionality"
+
+- name: "area:minigame"
+  color: "1d76db"
+  description: "Related to minigame functionality"
+
+# Additional labels
+- name: "blocked"
+  color: "d73a4a"
+  description: "Item is blocked"
