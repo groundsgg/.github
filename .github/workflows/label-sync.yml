@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   sync-labels:
-    name: Sync repository labels
     runs-on: ubuntu-latest
     steps:
       - name: Download labels.yml
