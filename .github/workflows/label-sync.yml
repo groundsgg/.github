@@ -1,0 +1,29 @@
+name: Sync Labels
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync-labels:
+    name: Sync repository labels
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download labels.yml
+        run: |
+          curl -fsSL "https://raw.githubusercontent.com/groundsgg/.github/refs/heads/main/.github/labels.yml" -o labels.yml
+
+      - name: Sync labels
+        uses: crazy-max/ghaction-github-labeler@v5
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          yaml-file: labels.yml
+          dry-run: ${{ github.event_name == 'pull_request' }}
+          skip-delete: false
+          exclude: |
+            help*
+            *issue
+            autorelease*

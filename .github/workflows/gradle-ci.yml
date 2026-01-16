@@ -29,7 +29,10 @@ jobs:
           } > ~/.gradle/gradle.properties
 
       - name: Build
-        run: ./gradlew build --exclude-task test
+        run: |
+          ./gradlew build --scan --exclude-task test
+
 
       - name: Test
-        run: ./gradlew test
+        run: |
+          ./gradlew test --scan
