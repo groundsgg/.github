@@ -1,18 +1,7 @@
-name: Docker Build and Push
+name: Docker Gradle Build and Push
 
 on:
   workflow_call:
-    inputs:
-      image_title:
-        description: Human readable image title (org.opencontainers.image.title)
-        required: true
-        type: string
-        default: ""
-      image_description:
-        description: Human readable image description (org.opencontainers.image.description)
-        required: true
-        type: string
-        default: ""
 
 permissions:
   packages: write
@@ -78,8 +67,6 @@ jobs:
             org.opencontainers.image.version=${{ steps.gradle_version.outputs.value }}
             org.opencontainers.image.vendor=Grounds
             org.opencontainers.image.ref.name=${{ github.sha }}
-            org.opencontainers.image.title=${{ inputs.image_title }}
-            org.opencontainers.image.description=${{ inputs.image_description }}
 
       - name: Build image
         uses: docker/build-push-action@v6

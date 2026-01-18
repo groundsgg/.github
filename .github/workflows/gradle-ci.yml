@@ -30,9 +30,8 @@ jobs:
 
       - name: Build
         run: |
-          ./gradlew build --scan --exclude-task test
-
+          ./gradlew build --exclude-task test
 
       - name: Test
         run: |
-          ./gradlew test --scan
+          ./gradlew test
