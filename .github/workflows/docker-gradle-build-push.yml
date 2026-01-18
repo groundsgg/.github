@@ -3,10 +3,6 @@ name: Docker Gradle Build and Push
 on:
   workflow_call:
 
-permissions:
-  packages: write
-  actions: write
-
 jobs:
   docker-build-push:
     runs-on: ubuntu-latest
