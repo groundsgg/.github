@@ -1,19 +1,3 @@
 # .github
 
-This repository contains GitHub templates and issue forms for the organization.
-
-## 📁 Contents
-
-- **Issue Forms** (`.github/ISSUE_TEMPLATE/`)
-  - `bug_report.yml` - 🐛 Bug report template
-  - `feature_request.yml` - ✨ Feature request template  
-  - `documentation.yml` - 📚 Documentation issue template
-  - `config.yml` - ⚙️ Issue template configuration
-
-- **Pull Request Template**
-  - `pull_request_template.md` - 🔄 PR template with semantic commit format
-
-- **Documentation**
-  - `README.md` - 📖 This file
-  - `profile/README.md` - 🌍 Organization profile page
-  - `cla.md` - 📄 Individual Contributor License Agreement (ICLA)
+Organization-level .github repository which contains our issue templates, pull request templates, reusable workflows and more.
