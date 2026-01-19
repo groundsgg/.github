@@ -32,6 +32,9 @@ jobs:
         run: ./gradlew build -Pversion=${{ github.ref_name }}
 
       - name: Publish package
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           tag_name="${GITHUB_REF#refs/tags/}"
           # Remove the leading 'v' from the tag to get the version number
