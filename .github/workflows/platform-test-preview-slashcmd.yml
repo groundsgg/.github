@@ -75,8 +75,8 @@ jobs:
           BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-          # Strip leading whitespace + take the first line.
-          line=$(printf '%s' "$BODY" | head -n1 | sed -E 's/^[[:space:]]+//')
+          # Normalize whitespace on the first line before matching.
+          line=$(printf '%s' "$BODY" | head -n1 | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//; s/[[:space:]]+/ /g')
           case "$line" in
             "/preview stop")
               echo "cmd=stop" >> "$GITHUB_OUTPUT"
@@ -126,8 +126,30 @@ jobs:
           PR_NUMBER: ${{ github.event.issue.number }}
         run: |
           set -euo pipefail
-          repo_short=$(printf '%s' "${REPO##*/}" | tr '[:upper:]' '[:lower:]')
-          echo "value=vcluster-pr-${repo_short}-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          prefix="vcluster-pr"
+          max_len=63
+          repo_short=$(
+            printf '%s' "${REPO##*/}" |
+              tr '[:upper:]' '[:lower:]' |
+              sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
+          )
+          if [ -z "$repo_short" ]; then
+            repo_short="repo"
+          fi
+          reserved_len=$(( ${#prefix} + ${#PR_NUMBER} + 2 ))
+          repo_max_len=$(( max_len - reserved_len ))
+          if [ "$repo_max_len" -lt 1 ]; then
+            repo_max_len=1
+          fi
+          repo_short=$(
+            printf '%s' "$repo_short" |
+              cut -c1-"$repo_max_len" |
+              sed -E 's/-+$//'
+          )
+          if [ -z "$repo_short" ]; then
+            repo_short="r"
+          fi
+          echo "value=${prefix}-${repo_short}-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
 
       - name: /preview extend → forge PATCH
         id: extend
@@ -139,6 +161,22 @@ jobs:
           HOURS: ${{ steps.parse.outputs.hours }}
         run: |
           set -euo pipefail
+          write_error_output() {
+            local payload="$1"
+            local error
+            error=$(printf '%s' "$payload" | jq -r '.error // .' 2>/dev/null || true)
+            if [ -z "$error" ] || [ "$error" = "null" ]; then
+              error="$payload"
+            fi
+            if [ -z "$error" ]; then
+              error="empty response body"
+            fi
+            {
+              echo "error<<EOF"
+              printf '%s\n' "$error"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          }
           body=$(jq -n --argjson h "$HOURS" '{ttlHours: $h}')
           response=$(curl -sS -X PATCH "$FORGE_URL/v1/cluster/preview-bundle/$NS/extend" \
             -H "Authorization: Bearer $FORGE_TOKEN" \
@@ -151,7 +189,7 @@ jobs:
           if [ "$status" = "200" ]; then
             echo "expires=$(printf '%s' "$payload" | jq -r .expiresAt)" >> "$GITHUB_OUTPUT"
           else
-            echo "error=$(printf '%s' "$payload" | jq -r '.error // .')" >> "$GITHUB_OUTPUT"
+            write_error_output "$payload"
           fi
 
       - name: /preview stop → forge DELETE
@@ -163,6 +201,22 @@ jobs:
           NS: ${{ steps.ns.outputs.value }}
         run: |
           set -euo pipefail
+          write_error_output() {
+            local payload="$1"
+            local error
+            error=$(printf '%s' "$payload" | jq -r '.error // .' 2>/dev/null || true)
+            if [ -z "$error" ] || [ "$error" = "null" ]; then
+              error="$payload"
+            fi
+            if [ -z "$error" ]; then
+              error="empty response body"
+            fi
+            {
+              echo "error<<EOF"
+              printf '%s\n' "$error"
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          }
           response=$(curl -sS -X DELETE "$FORGE_URL/v1/cluster/preview-bundle/$NS" \
             -H "Authorization: Bearer $FORGE_TOKEN" \
             -w "\n%{http_code}")
@@ -170,7 +224,7 @@ jobs:
           payload=$(printf '%s\n' "$response" | sed '$d')
           echo "status=$status" >> "$GITHUB_OUTPUT"
           if [ "$status" != "200" ]; then
-            echo "error=$(printf '%s' "$payload" | jq -r '.error // .')" >> "$GITHUB_OUTPUT"
+            write_error_output "$payload"
           fi
 
       - name: Reply on PR
