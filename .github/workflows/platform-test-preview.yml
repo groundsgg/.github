@@ -1,0 +1,245 @@
+name: Platform-Test Preview
+
+# Reusable workflow that builds + signs a component image with a
+# PR-specific tag, then asks forge to spin up an ephemeral preview
+# vCluster (or evict it on PR close). See:
+#
+#   https://github.com/groundsgg/grounds-platform/blob/main/docs/specs/2026-05-03-platform-test-pr-preview.md
+#
+# Consuming repo example:
+#
+#   # .github/workflows/preview.yml
+#   name: PR Preview
+#   on:
+#     pull_request:
+#       types: [opened, synchronize, reopened, closed]
+#   jobs:
+#     preview:
+#       uses: groundsgg/.github/.github/workflows/platform-test-preview.yml@main
+#       with:
+#         component-name: plugin-social
+#         bundle-version: "0.4.0"
+#         ttl-hours: 12
+#       secrets:
+#         FORGE_TOKEN: ${{ secrets.FORGE_PREVIEW_TOKEN }}
+#         COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+#         COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+
+on:
+  workflow_call:
+    inputs:
+      component-name:
+        description: "Bundle component name to override (matches bundle.yaml)."
+        required: true
+        type: string
+      bundle-version:
+        description: "PlatformBundle ref to deploy (e.g. 0.4.0, main)."
+        required: true
+        type: string
+      ttl-hours:
+        description: "Preview lifetime, 1-48 hours. Refreshed on each synchronize."
+        required: false
+        type: number
+        default: 12
+      forge-base-url:
+        description: "Forge API base URL. Override only for staging."
+        required: false
+        type: string
+        default: "https://forge.platform.grnds.io"
+    secrets:
+      FORGE_TOKEN:
+        description: "Bearer for forge — typically a CI-tester SA token from the grounds-test realm."
+        required: true
+      COSIGN_PRIVATE_KEY:
+        description: "Private key used by cosign to sign the built image."
+        required: true
+      COSIGN_PASSWORD:
+        description: "Password for decrypting the cosign private key."
+        required: true
+
+concurrency:
+  group: platform-test-preview-${{ github.repository }}-${{ github.event.pull_request.number }}-${{ inputs.component-name }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Build + push image (skipped on PR close) ──────────────────────
+  build:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    outputs:
+      image-tag: ${{ steps.tag.outputs.value }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - id: tag
+        run: echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build + push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.value }}
+          # Build on every commit — preview is supposed to track the
+          # PR head, so cache aggressively across PR pushes.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: v2.4.3
+
+      - name: Sign image
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+        run: |
+          cosign sign --yes --key=env://COSIGN_PRIVATE_KEY \
+            ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+
+  # ── Mint / refresh the preview vCluster ───────────────────────────
+  mint:
+    if: github.event.action != 'closed'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: POST /v1/cluster/preview-bundle
+        id: forge
+        env:
+          FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+          FORGE_URL: ${{ inputs.forge-base-url }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha }}
+          COMPONENT: ${{ inputs.component-name }}
+          TAG: ${{ needs.build.outputs.image-tag }}
+          BUNDLE: ${{ inputs.bundle-version }}
+          TTL: ${{ inputs.ttl-hours }}
+        run: |
+          set -euo pipefail
+          body=$(jq -n \
+            --arg bundle "$BUNDLE" \
+            --arg repo "$REPO" \
+            --argjson prNumber "$PR_NUMBER" \
+            --arg sha "$COMMIT_SHA" \
+            --arg cn "$COMPONENT" \
+            --arg tag "$TAG" \
+            --argjson ttl "$TTL" \
+            '{bundle: $bundle, repo: $repo, prNumber: $prNumber, sourceCommitSha: $sha,
+              componentOverride: {componentName: $cn, tag: $tag}, ttlHours: $ttl}')
+          response=$(curl -sS -X POST "$FORGE_URL/v1/cluster/preview-bundle" \
+            -H "Authorization: Bearer $FORGE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$body" \
+            -w "\n%{http_code}")
+          status=$(printf '%s\n' "$response" | tail -n1)
+          payload=$(printf '%s\n' "$response" | sed '$d')
+          if [ "$status" != "200" ]; then
+            echo "forge returned $status: $payload" >&2
+            exit 1
+          fi
+          # Surface key fields for the comment step.
+          echo "namespace=$(printf '%s' "$payload" | jq -r .namespace)" >> "$GITHUB_OUTPUT"
+          echo "expires=$(printf '%s' "$payload" | jq -r .expiresAt)" >> "$GITHUB_OUTPUT"
+          echo "succeeded=$(printf '%s' "$payload" | jq -r '.components.succeeded | length')" >> "$GITHUB_OUTPUT"
+          echo "resolved=$(printf '%s' "$payload" | jq -r '.components.resolved')" >> "$GITHUB_OUTPUT"
+          echo "failed_json=$(printf '%s' "$payload" | jq -c '.components.failed')" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        env:
+          NAMESPACE: ${{ steps.forge.outputs.namespace }}
+          EXPIRES: ${{ steps.forge.outputs.expires }}
+          SUCCEEDED: ${{ steps.forge.outputs.succeeded }}
+          RESOLVED: ${{ steps.forge.outputs.resolved }}
+          FAILED: ${{ steps.forge.outputs.failed_json }}
+        with:
+          script: |
+            const failed = JSON.parse(process.env.FAILED || "[]");
+            const failedLines = failed.map(f => `  - \`${f.name}\`: ${f.error}`).join('\n');
+            const body = [
+              `🧪 **Platform-test preview ready**`,
+              ``,
+              `Namespace: \`${process.env.NAMESPACE}\``,
+              `Expires: ${process.env.EXPIRES}`,
+              `Components: ${process.env.SUCCEEDED}/${process.env.RESOLVED} succeeded`,
+              failed.length ? `\nFailed components:\n${failedLines}` : '',
+              ``,
+              `Access:`,
+              "```",
+              `kubectl --context=platform-cluster -n ${process.env.NAMESPACE} get secret ${process.env.NAMESPACE} -o jsonpath='{.data.config}' | base64 -d > kc`,
+              "```",
+              ``,
+              `_Refreshed on every push. The preview is evicted automatically when the PR is closed._`,
+            ].filter(Boolean).join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              per_page: 100,
+            });
+            const marker = '🧪 **Platform-test preview ready**';
+            const existing = comments.find(c => c.body && c.body.startsWith(marker) && c.user.type === 'Bot');
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  # ── Evict on PR close ─────────────────────────────────────────────
+  evict:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: DELETE /v1/cluster/preview-bundle/:namespace
+        env:
+          FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+          FORGE_URL: ${{ inputs.forge-base-url }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # Mirror the namespace-derivation rule the reconciler uses:
+          # "vcluster-pr-<repo-shortname-lowercase>-<n>".
+          repo_short=$(printf '%s' "${REPO##*/}" | tr '[:upper:]' '[:lower:]')
+          namespace="vcluster-pr-${repo_short}-${PR_NUMBER}"
+          curl -sS -X DELETE "$FORGE_URL/v1/cluster/preview-bundle/$namespace" \
+            -H "Authorization: Bearer $FORGE_TOKEN" \
+            -w "\n%{http_code}" \
+            -o /tmp/resp \
+            | tee /tmp/status
+          status=$(tail -n1 /tmp/status)
+          if [ "$status" != "200" ] && [ "$status" != "404" ]; then
+            echo "forge returned $status:" >&2
+            cat /tmp/resp >&2
+            exit 1
+          fi
+          echo "✔ Preview vCluster $namespace evicted (or already gone)."
