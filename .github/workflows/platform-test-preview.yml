@@ -22,6 +22,8 @@ name: Platform-Test Preview
 #         ttl-hours: 12
 #       secrets:
 #         FORGE_TOKEN: ${{ secrets.FORGE_PREVIEW_TOKEN }}
+#         COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+#         COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
 
 on:
   workflow_call:
@@ -48,6 +50,16 @@ on:
       FORGE_TOKEN:
         description: "Bearer for forge — typically a CI-tester SA token from the grounds-test realm."
         required: true
+      COSIGN_PRIVATE_KEY:
+        description: "Private key used by cosign to sign the built image."
+        required: true
+      COSIGN_PASSWORD:
+        description: "Password for decrypting the cosign private key."
+        required: true
+
+concurrency:
+  group: platform-test-preview-${{ github.repository }}-${{ github.event.pull_request.number }}-${{ inputs.component-name }}
+  cancel-in-progress: true
 
 jobs:
   # ── Build + push image (skipped on PR close) ──────────────────────
@@ -62,6 +74,8 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - id: tag
         run: echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
@@ -173,7 +187,7 @@ jobs:
               `kubectl --context=platform-cluster -n ${process.env.NAMESPACE} get secret ${process.env.NAMESPACE} -o jsonpath='{.data.config}' | base64 -d > kc`,
               "```",
               ``,
-              `_Refreshed on every push. Comment \`/preview stop\` to evict early._`,
+              `_Refreshed on every push. The preview is evicted automatically when the PR is closed._`,
             ].filter(Boolean).join('\n');
 
             const { data: comments } = await github.rest.issues.listComments({
