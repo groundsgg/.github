@@ -1,0 +1,214 @@
+name: Platform-Test Preview Slash Commands
+
+# Reusable workflow that handles `/preview extend [Nh]` and
+# `/preview stop` PR comments on a component repo. Pairs with
+# platform-test-preview.yml — that workflow mints/refreshes the
+# preview on PR events; this one handles in-PR comment commands.
+#
+# Consuming repo example:
+#
+#   # .github/workflows/preview-slashcmd.yml
+#   name: PR Preview Slash Commands
+#   on:
+#     issue_comment:
+#       types: [created]
+#   jobs:
+#     slashcmd:
+#       if: github.event.issue.pull_request != null
+#       uses: groundsgg/.github/.github/workflows/platform-test-preview-slashcmd.yml@main
+#       with:
+#         forge-base-url: "https://forge.platform.grnds.io"   # optional
+#       secrets:
+#         FORGE_TOKEN: ${{ secrets.FORGE_PREVIEW_TOKEN }}
+
+on:
+  workflow_call:
+    inputs:
+      forge-base-url:
+        description: "Forge API base URL. Override only for staging."
+        required: false
+        type: string
+        default: "https://forge.platform.grnds.io"
+    secrets:
+      FORGE_TOKEN:
+        description: "Bearer for forge — typically a CI-tester SA token from the grounds-test realm."
+        required: true
+
+jobs:
+  slashcmd:
+    # Only run on PR comments — issue_comment fires on issues too.
+    # The consuming caller already gates with
+    # `if: github.event.issue.pull_request != null`, but we double-up
+    # here because reusable workflows shouldn't trust their callers.
+    if: github.event.issue.pull_request != null
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      # Author check — only allow comments from users with write
+      # access to the repo. Without this, anyone can comment
+      # `/preview stop` and evict the preview.
+      - name: Verify commenter has write access
+        id: gate
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const author = context.payload.comment.user.login;
+            const { data: perm } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: author,
+            });
+            const allowed = ["admin", "maintain", "write"];
+            if (!allowed.includes(perm.permission)) {
+              core.info(`commenter ${author} has permission=${perm.permission}; skipping`);
+              return false;
+            }
+            return true;
+          result-encoding: string
+
+      - name: Parse command
+        id: parse
+        if: steps.gate.outputs.result == 'true'
+        env:
+          BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          # Strip leading whitespace + take the first line.
+          line=$(printf '%s' "$BODY" | head -n1 | sed -E 's/^[[:space:]]+//')
+          case "$line" in
+            "/preview stop")
+              echo "cmd=stop" >> "$GITHUB_OUTPUT"
+              ;;
+            "/preview extend")
+              echo "cmd=extend" >> "$GITHUB_OUTPUT"
+              echo "hours=12" >> "$GITHUB_OUTPUT"
+              ;;
+            "/preview extend "*"h")
+              # `/preview extend 6h`, `/preview extend 24h`, etc.
+              hours=$(printf '%s' "$line" | sed -E 's|^/preview extend ([0-9]+)h$|\1|')
+              if [ -z "$hours" ] || [ "$hours" = "$line" ]; then
+                echo "cmd=invalid" >> "$GITHUB_OUTPUT"
+                echo "msg=could not parse hours from \`$line\`" >> "$GITHUB_OUTPUT"
+              else
+                echo "cmd=extend" >> "$GITHUB_OUTPUT"
+                echo "hours=$hours" >> "$GITHUB_OUTPUT"
+              fi
+              ;;
+            "/preview "*)
+              echo "cmd=invalid" >> "$GITHUB_OUTPUT"
+              echo "msg=unknown command \`$line\` — try \`/preview extend [Nh]\` or \`/preview stop\`" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              # Not a /preview command at all; nothing to do.
+              echo "cmd=skip" >> "$GITHUB_OUTPUT"
+              ;;
+          esac
+
+      - name: React 👀 to acknowledge
+        if: ${{ steps.parse.outputs.cmd == 'extend' || steps.parse.outputs.cmd == 'stop' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes',
+            });
+
+      - name: Compute namespace
+        id: ns
+        if: ${{ steps.parse.outputs.cmd == 'extend' || steps.parse.outputs.cmd == 'stop' }}
+        env:
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          repo_short=$(printf '%s' "${REPO##*/}" | tr '[:upper:]' '[:lower:]')
+          echo "value=vcluster-pr-${repo_short}-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+
+      - name: /preview extend → forge PATCH
+        id: extend
+        if: ${{ steps.parse.outputs.cmd == 'extend' }}
+        env:
+          FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+          FORGE_URL: ${{ inputs.forge-base-url }}
+          NS: ${{ steps.ns.outputs.value }}
+          HOURS: ${{ steps.parse.outputs.hours }}
+        run: |
+          set -euo pipefail
+          body=$(jq -n --argjson h "$HOURS" '{ttlHours: $h}')
+          response=$(curl -sS -X PATCH "$FORGE_URL/v1/cluster/preview-bundle/$NS/extend" \
+            -H "Authorization: Bearer $FORGE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "$body" \
+            -w "\n%{http_code}")
+          status=$(printf '%s\n' "$response" | tail -n1)
+          payload=$(printf '%s\n' "$response" | sed '$d')
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" = "200" ]; then
+            echo "expires=$(printf '%s' "$payload" | jq -r .expiresAt)" >> "$GITHUB_OUTPUT"
+          else
+            echo "error=$(printf '%s' "$payload" | jq -r '.error // .')" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: /preview stop → forge DELETE
+        id: stop
+        if: ${{ steps.parse.outputs.cmd == 'stop' }}
+        env:
+          FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+          FORGE_URL: ${{ inputs.forge-base-url }}
+          NS: ${{ steps.ns.outputs.value }}
+        run: |
+          set -euo pipefail
+          response=$(curl -sS -X DELETE "$FORGE_URL/v1/cluster/preview-bundle/$NS" \
+            -H "Authorization: Bearer $FORGE_TOKEN" \
+            -w "\n%{http_code}")
+          status=$(printf '%s\n' "$response" | tail -n1)
+          payload=$(printf '%s\n' "$response" | sed '$d')
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" != "200" ]; then
+            echo "error=$(printf '%s' "$payload" | jq -r '.error // .')" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reply on PR
+        if: ${{ steps.parse.outputs.cmd != 'skip' && steps.gate.outputs.result == 'true' }}
+        uses: actions/github-script@v7
+        env:
+          CMD: ${{ steps.parse.outputs.cmd }}
+          MSG: ${{ steps.parse.outputs.msg }}
+          NS: ${{ steps.ns.outputs.value }}
+          EXTEND_STATUS: ${{ steps.extend.outputs.status }}
+          EXTEND_EXPIRES: ${{ steps.extend.outputs.expires }}
+          EXTEND_ERROR: ${{ steps.extend.outputs.error }}
+          STOP_STATUS: ${{ steps.stop.outputs.status }}
+          STOP_ERROR: ${{ steps.stop.outputs.error }}
+        with:
+          script: |
+            let body;
+            const cmd = process.env.CMD;
+            if (cmd === 'invalid') {
+              body = `❌ ${process.env.MSG}`;
+            } else if (cmd === 'extend') {
+              if (process.env.EXTEND_STATUS === '200') {
+                body = `⏳ Preview extended. New expiry: ${process.env.EXTEND_EXPIRES}`;
+              } else {
+                body = `❌ Extend failed (HTTP ${process.env.EXTEND_STATUS}): ${process.env.EXTEND_ERROR}`;
+              }
+            } else if (cmd === 'stop') {
+              if (process.env.STOP_STATUS === '200') {
+                body = `🛑 Preview \`${process.env.NS}\` evicted.`;
+              } else {
+                body = `❌ Stop failed (HTTP ${process.env.STOP_STATUS}): ${process.env.STOP_ERROR}`;
+              }
+            } else {
+              return;
+            }
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
