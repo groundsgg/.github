@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://grounds.gg">
-    <img src="./assets/grounds-logo.png" alt="Grounds" width="720" />
+    <img src="./assets/grounds-logo.webp" alt="Grounds" width="720" />
   </a>
 </p>
 
