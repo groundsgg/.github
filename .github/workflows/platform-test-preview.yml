@@ -21,9 +21,15 @@ name: Platform-Test Preview
 #         bundle-version: "0.4.0"
 #         ttl-hours: 12
 #       secrets:
-#         FORGE_TOKEN: ${{ secrets.FORGE_PREVIEW_TOKEN }}
+#         KEYCLOAK_CLIENT_ID: ${{ secrets.KEYCLOAK_CLIENT_ID }}
+#         KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
 #         COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
 #         COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
+#
+# The workflow mints a fresh Keycloak access token via client-credentials
+# at the start of every forge call. This avoids having a long-lived
+# bearer token in repo secrets that would expire silently between PR
+# events; only the (refreshable) client credentials are stored.
 
 on:
   workflow_call:
@@ -46,9 +52,17 @@ on:
         required: false
         type: string
         default: "https://forge.platform.grnds.io"
+      keycloak-token-url:
+        description: "Keycloak OIDC token endpoint."
+        required: false
+        type: string
+        default: "https://account.grounds.gg/realms/grounds/protocol/openid-connect/token"
     secrets:
-      FORGE_TOKEN:
-        description: "Bearer for forge — typically a CI-tester SA token from the grounds-test realm."
+      KEYCLOAK_CLIENT_ID:
+        description: "Keycloak confidential client (typically `grounds-ci-tester`)."
+        required: true
+      KEYCLOAK_CLIENT_SECRET:
+        description: "Client secret for KEYCLOAK_CLIENT_ID."
         required: true
       COSIGN_PRIVATE_KEY:
         description: "Private key used by cosign to sign the built image."
@@ -120,10 +134,37 @@ jobs:
     permissions:
       pull-requests: write
     steps:
+      - name: Mint forge access token
+        id: token
+        env:
+          KEYCLOAK_TOKEN_URL: ${{ inputs.keycloak-token-url }}
+          KEYCLOAK_CLIENT_ID: ${{ secrets.KEYCLOAK_CLIENT_ID }}
+          KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          response=$(curl -sS -X POST "$KEYCLOAK_TOKEN_URL" \
+            -d "grant_type=client_credentials" \
+            -u "$KEYCLOAK_CLIENT_ID:$KEYCLOAK_CLIENT_SECRET" \
+            -w "\n%{http_code}")
+          status=$(printf '%s\n' "$response" | tail -n1)
+          payload=$(printf '%s\n' "$response" | sed '$d')
+          if [ "$status" != "200" ]; then
+            echo "Keycloak token mint failed (status=$status): $payload" >&2
+            exit 1
+          fi
+          token=$(printf '%s' "$payload" | jq -r .access_token)
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "Keycloak responded 200 but no access_token in body: $payload" >&2
+            exit 1
+          fi
+          # Mask the token in subsequent log output.
+          printf '::add-mask::%s\n' "$token"
+          echo "value=$token" >> "$GITHUB_OUTPUT"
+
       - name: POST /v1/cluster/preview-bundle
         id: forge
         env:
-          FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+          FORGE_TOKEN: ${{ steps.token.outputs.value }}
           FORGE_URL: ${{ inputs.forge-base-url }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -219,9 +260,35 @@ jobs:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
+      - name: Mint forge access token
+        id: token
+        env:
+          KEYCLOAK_TOKEN_URL: ${{ inputs.keycloak-token-url }}
+          KEYCLOAK_CLIENT_ID: ${{ secrets.KEYCLOAK_CLIENT_ID }}
+          KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          response=$(curl -sS -X POST "$KEYCLOAK_TOKEN_URL" \
+            -d "grant_type=client_credentials" \
+            -u "$KEYCLOAK_CLIENT_ID:$KEYCLOAK_CLIENT_SECRET" \
+            -w "\n%{http_code}")
+          status=$(printf '%s\n' "$response" | tail -n1)
+          payload=$(printf '%s\n' "$response" | sed '$d')
+          if [ "$status" != "200" ]; then
+            echo "Keycloak token mint failed (status=$status): $payload" >&2
+            exit 1
+          fi
+          token=$(printf '%s' "$payload" | jq -r .access_token)
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "Keycloak responded 200 but no access_token in body: $payload" >&2
+            exit 1
+          fi
+          printf '::add-mask::%s\n' "$token"
+          echo "value=$token" >> "$GITHUB_OUTPUT"
+
       - name: DELETE /v1/cluster/preview-bundle/:namespace
         env:
-          FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+          FORGE_TOKEN: ${{ steps.token.outputs.value }}
           FORGE_URL: ${{ inputs.forge-base-url }}
           REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}

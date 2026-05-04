@@ -16,10 +16,13 @@ name: Platform-Test Preview Slash Commands
 #     slashcmd:
 #       if: github.event.issue.pull_request != null
 #       uses: groundsgg/.github/.github/workflows/platform-test-preview-slashcmd.yml@main
-#       with:
-#         forge-base-url: "https://forge.platform.grnds.io"   # optional
 #       secrets:
-#         FORGE_TOKEN: ${{ secrets.FORGE_PREVIEW_TOKEN }}
+#         KEYCLOAK_CLIENT_ID: ${{ secrets.KEYCLOAK_CLIENT_ID }}
+#         KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
+#
+# Mints a fresh Keycloak access token via client_credentials inside
+# the workflow rather than holding a long-lived bearer in secrets;
+# only the (refreshable) client credentials are stored in the repo.
 
 on:
   workflow_call:
@@ -29,9 +32,17 @@ on:
         required: false
         type: string
         default: "https://forge.platform.grnds.io"
+      keycloak-token-url:
+        description: "Keycloak OIDC token endpoint."
+        required: false
+        type: string
+        default: "https://account.grounds.gg/realms/grounds/protocol/openid-connect/token"
     secrets:
-      FORGE_TOKEN:
-        description: "Bearer for forge — typically a CI-tester SA token from the grounds-test realm."
+      KEYCLOAK_CLIENT_ID:
+        description: "Keycloak confidential client (typically `grounds-ci-tester`)."
+        required: true
+      KEYCLOAK_CLIENT_SECRET:
+        description: "Client secret for KEYCLOAK_CLIENT_ID."
         required: true
 
 jobs:
@@ -151,11 +162,38 @@ jobs:
           fi
           echo "value=${prefix}-${repo_short}-${PR_NUMBER}" >> "$GITHUB_OUTPUT"
 
+      - name: Mint forge access token
+        id: token
+        if: ${{ steps.parse.outputs.cmd == 'extend' || steps.parse.outputs.cmd == 'stop' }}
+        env:
+          KEYCLOAK_TOKEN_URL: ${{ inputs.keycloak-token-url }}
+          KEYCLOAK_CLIENT_ID: ${{ secrets.KEYCLOAK_CLIENT_ID }}
+          KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          response=$(curl -sS -X POST "$KEYCLOAK_TOKEN_URL" \
+            -d "grant_type=client_credentials" \
+            -u "$KEYCLOAK_CLIENT_ID:$KEYCLOAK_CLIENT_SECRET" \
+            -w "\n%{http_code}")
+          status=$(printf '%s\n' "$response" | tail -n1)
+          payload=$(printf '%s\n' "$response" | sed '$d')
+          if [ "$status" != "200" ]; then
+            echo "Keycloak token mint failed (status=$status): $payload" >&2
+            exit 1
+          fi
+          token=$(printf '%s' "$payload" | jq -r .access_token)
+          if [ -z "$token" ] || [ "$token" = "null" ]; then
+            echo "Keycloak responded 200 but no access_token in body: $payload" >&2
+            exit 1
+          fi
+          printf '::add-mask::%s\n' "$token"
+          echo "value=$token" >> "$GITHUB_OUTPUT"
+
       - name: /preview extend → forge PATCH
         id: extend
         if: ${{ steps.parse.outputs.cmd == 'extend' }}
         env:
-          FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+          FORGE_TOKEN: ${{ steps.token.outputs.value }}
           FORGE_URL: ${{ inputs.forge-base-url }}
           NS: ${{ steps.ns.outputs.value }}
           HOURS: ${{ steps.parse.outputs.hours }}
@@ -196,7 +234,7 @@ jobs:
         id: stop
         if: ${{ steps.parse.outputs.cmd == 'stop' }}
         env:
-          FORGE_TOKEN: ${{ secrets.FORGE_TOKEN }}
+          FORGE_TOKEN: ${{ steps.token.outputs.value }}
           FORGE_URL: ${{ inputs.forge-base-url }}
           NS: ${{ steps.ns.outputs.value }}
         run: |
