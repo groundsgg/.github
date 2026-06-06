@@ -2,10 +2,16 @@ name: Gradle CI
 
 on:
   workflow_call:
+    inputs:
+      runner:
+        description: "Runner label. arc-dind (default) has Docker for testcontainers / Quarkus dev-services; pass arc-linux for plugins without container tests."
+        required: false
+        type: string
+        default: arc-dind
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ inputs.runner }}
     steps:
       - name: Check out
         uses: actions/checkout@v6

@@ -79,7 +79,7 @@ jobs:
   # ── Build + push image (skipped on PR close) ──────────────────────
   build:
     if: github.event.action != 'closed'
-    runs-on: ubuntu-latest
+    runs-on: arc-dind
     outputs:
       image-tag: ${{ steps.tag.outputs.value }}
     permissions:
@@ -130,7 +130,7 @@ jobs:
   mint:
     if: github.event.action != 'closed'
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: arc-linux
     permissions:
       pull-requests: write
     steps:
@@ -258,7 +258,7 @@ jobs:
   # ── Evict on PR close ─────────────────────────────────────────────
   evict:
     if: github.event.action == 'closed'
-    runs-on: ubuntu-latest
+    runs-on: arc-linux
     steps:
       - name: Mint forge access token
         id: token

@@ -10,7 +10,7 @@ on:
 jobs:
   release-please:
     name: Create Release
-    runs-on: ubuntu-latest
+    runs-on: arc-linux
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
