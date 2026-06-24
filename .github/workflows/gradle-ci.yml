@@ -14,7 +14,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Check out
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Java
         uses: actions/setup-java@v5
@@ -24,7 +24,7 @@ jobs:
           cache: "gradle"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Configure GitHub Packages credentials
         run: |

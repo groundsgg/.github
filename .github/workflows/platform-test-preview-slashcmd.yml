@@ -62,7 +62,7 @@ jobs:
       # `/preview stop` and evict the preview.
       - name: Verify commenter has write access
         id: gate
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const author = context.payload.comment.user.login;
@@ -119,7 +119,7 @@ jobs:
 
       - name: React 👀 to acknowledge
         if: ${{ steps.parse.outputs.cmd == 'extend' || steps.parse.outputs.cmd == 'stop' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             await github.rest.reactions.createForIssueComment({
@@ -267,7 +267,7 @@ jobs:
 
       - name: Reply on PR
         if: ${{ steps.parse.outputs.cmd != 'skip' && steps.gate.outputs.result == 'true' }}
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         env:
           CMD: ${{ steps.parse.outputs.cmd }}
           MSG: ${{ steps.parse.outputs.msg }}
