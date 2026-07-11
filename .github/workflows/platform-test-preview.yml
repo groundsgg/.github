@@ -192,12 +192,83 @@ jobs:
             -w "\n%{http_code}")
           status=$(printf '%s\n' "$response" | tail -n1)
           payload=$(printf '%s\n' "$response" | sed '$d')
-          if [ "$status" != "200" ]; then
+          # forge provisions in a background worker and answers 202; the next
+          # step polls for the outcome.
+          if [ "$status" != "202" ]; then
             echo "forge returned $status: $payload" >&2
             exit 1
           fi
-          # Surface key fields for the comment step.
           echo "namespace=$(printf '%s' "$payload" | jq -r .namespace)" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the preview to provision
+        id: preview
+        env:
+          FORGE_TOKEN: ${{ steps.token.outputs.value }}
+          FORGE_URL: ${{ inputs.forge-base-url }}
+          NAMESPACE: ${{ steps.forge.outputs.namespace }}
+          KEYCLOAK_TOKEN_URL: ${{ inputs.keycloak-token-url }}
+          KEYCLOAK_CLIENT_ID: ${{ secrets.KEYCLOAK_CLIENT_ID }}
+          KEYCLOAK_CLIENT_SECRET: ${{ secrets.KEYCLOAK_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          token="$FORGE_TOKEN"
+
+          # A bundle provision runs for minutes, well past the Keycloak access
+          # token's TTL, so re-mint whenever forge says the token expired.
+          mint() {
+            local response status payload
+            response=$(curl -sS -X POST "$KEYCLOAK_TOKEN_URL" \
+              -d "grant_type=client_credentials" \
+              -u "$KEYCLOAK_CLIENT_ID:$KEYCLOAK_CLIENT_SECRET" \
+              -w "\n%{http_code}")
+            status=$(printf '%s\n' "$response" | tail -n1)
+            payload=$(printf '%s\n' "$response" | sed '$d')
+            if [ "$status" != "200" ]; then
+              echo "Keycloak token re-mint failed (status=$status)" >&2
+              return 1
+            fi
+            token=$(printf '%s' "$payload" | jq -r .access_token)
+            printf '::add-mask::%s\n' "$token"
+          }
+
+          deadline=$(( $(date +%s) + 1800 ))
+          while :; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "preview $NAMESPACE still provisioning after 30m" >&2
+              exit 1
+            fi
+
+            response=$(curl -sS "$FORGE_URL/v1/cluster/preview-bundle/$NAMESPACE" \
+              -H "Authorization: Bearer $token" \
+              -w "\n%{http_code}")
+            status=$(printf '%s\n' "$response" | tail -n1)
+            payload=$(printf '%s\n' "$response" | sed '$d')
+
+            if [ "$status" = "401" ]; then
+              mint
+              sleep 5
+              continue
+            fi
+
+            if [ "$status" = "200" ]; then
+              state=$(printf '%s' "$payload" | jq -r .state)
+              if [ "$state" = "active" ]; then
+                break
+              fi
+              if [ "$state" = "failed" ]; then
+                echo "preview failed: $(printf '%s' "$payload" | jq -r '.error // "unknown"')" >&2
+                exit 1
+              fi
+            else
+              # Transient (502 during a rollout, 404 before the row is visible) —
+              # keep polling until the deadline rather than failing the run.
+              echo "poll returned $status: $payload" >&2
+            fi
+
+            sleep 15
+          done
+
+          # Surface key fields for the comment step.
           echo "expires=$(printf '%s' "$payload" | jq -r .expiresAt)" >> "$GITHUB_OUTPUT"
           echo "succeeded=$(printf '%s' "$payload" | jq -r '.components.succeeded | length')" >> "$GITHUB_OUTPUT"
           echo "resolved=$(printf '%s' "$payload" | jq -r '.components.resolved')" >> "$GITHUB_OUTPUT"
@@ -207,10 +278,10 @@ jobs:
         uses: actions/github-script@v9
         env:
           NAMESPACE: ${{ steps.forge.outputs.namespace }}
-          EXPIRES: ${{ steps.forge.outputs.expires }}
-          SUCCEEDED: ${{ steps.forge.outputs.succeeded }}
-          RESOLVED: ${{ steps.forge.outputs.resolved }}
-          FAILED: ${{ steps.forge.outputs.failed_json }}
+          EXPIRES: ${{ steps.preview.outputs.expires }}
+          SUCCEEDED: ${{ steps.preview.outputs.succeeded }}
+          RESOLVED: ${{ steps.preview.outputs.resolved }}
+          FAILED: ${{ steps.preview.outputs.failed_json }}
         with:
           script: |
             const failed = JSON.parse(process.env.FAILED || "[]");
