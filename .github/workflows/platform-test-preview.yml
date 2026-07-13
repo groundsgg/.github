@@ -114,7 +114,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - uses: sigstore/cosign-installer@v4
+      # Pinned to a full version on purpose. Unlike actions/checkout and the
+      # docker/* actions above, sigstore/cosign-installer publishes no moving
+      # major tag — `@v4` resolves to nothing and fails the job outright with
+      # "Unable to resolve action ... unable to find version `v4`". Do not
+      # shorten this to match its neighbours.
+      - uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: v2.4.3
 
