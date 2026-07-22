@@ -10,7 +10,7 @@ on:
 jobs:
   release-please:
     name: Create Release
-    runs-on: arc-linux
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

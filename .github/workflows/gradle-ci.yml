@@ -4,10 +4,10 @@ on:
   workflow_call:
     inputs:
       runner:
-        description: "Runner label. arc-dind (default) has Docker for testcontainers / Quarkus dev-services; pass arc-linux for plugins without container tests."
+        description: "Runner label. Defaults to a 4 vCPU arm64 Blacksmith runner, which has Docker for testcontainers / Quarkus dev-services. Pass an amd64 label (blacksmith-4vcpu-ubuntu-2404) if a test image has no arm64 variant."
         required: false
         type: string
-        default: arc-dind
+        default: blacksmith-4vcpu-ubuntu-2404-arm
 
 jobs:
   build:
