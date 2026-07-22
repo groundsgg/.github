@@ -52,7 +52,7 @@ jobs:
     # `if: github.event.issue.pull_request != null`, but we double-up
     # here because reusable workflows shouldn't trust their callers.
     if: github.event.issue.pull_request != null
-    runs-on: arc-linux
+    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
     permissions:
       issues: write
       pull-requests: write
