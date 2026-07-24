@@ -1,0 +1,175 @@
+name: Publish OpenAPI Snapshot
+
+on:
+  workflow_call:
+    inputs:
+      artifact_name:
+        description: Name of the workflow artifact containing openapi.json
+        required: true
+        type: string
+      service_id:
+        description: Lowercase kebab-case service identifier
+        required: true
+        type: string
+      service_title:
+        description: Public API title
+        required: true
+        type: string
+      service_slug:
+        description: Lowercase kebab-case Scalar slug
+        required: true
+        type: string
+      source_ref:
+        description: Source release or workflow ref
+        required: true
+        type: string
+      source_sha:
+        description: Exact source commit SHA
+        required: true
+        type: string
+    secrets:
+      app_private_key:
+        description: Private key for the dedicated OpenAPI publisher GitHub App
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openapi-snapshot-${{ inputs.service_id }}
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    if: github.repository_owner == 'groundsgg'
+    runs-on: arc-linux
+    steps:
+      - name: Download OpenAPI artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: ${{ runner.temp }}/openapi-artifact
+
+      - name: Create API reference token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.OPENAPI_PUBLISHER_APP_ID }}
+          private-key: ${{ secrets.app_private_key }}
+          owner: groundsgg
+          repositories: api-reference
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Check out API reference
+        uses: actions/checkout@v7
+        with:
+          repository: groundsgg/api-reference
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+          fetch-depth: 0
+          path: ${{ runner.temp }}/api-reference
+
+      - name: Update API snapshot
+        uses: groundsgg/.github/actions/update-openapi-snapshot@main
+        with:
+          artifact_path: ${{ runner.temp }}/openapi-artifact/openapi.json
+          checkout_path: ${{ runner.temp }}/api-reference
+          service_id: ${{ inputs.service_id }}
+          service_title: ${{ inputs.service_title }}
+          service_slug: ${{ inputs.service_slug }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ${{ runner.temp }}/api-reference/package-lock.json
+
+      - name: Validate API reference
+        working-directory: ${{ runner.temp }}/api-reference
+        run: |
+          npm ci
+          npm run validate:specs
+          npm test
+          npm run build
+
+      - name: Detect snapshot changes
+        id: changes
+        working-directory: ${{ runner.temp }}/api-reference
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit and push snapshot
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: ${{ runner.temp }}/api-reference
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          BRANCH_NAME: docs/update-${{ inputs.service_id }}-openapi
+          COMMIT_MESSAGE: "docs: update ${{ inputs.service_id }} api snapshot"
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          bot_user="${APP_SLUG}[bot]"
+          bot_id="$(gh api "/users/$bot_user" --jq '.id')"
+          git config user.name "$bot_user"
+          git config user.email "${bot_id}+${bot_user}@users.noreply.github.com"
+          if git ls-remote --exit-code origin "refs/heads/$BRANCH_NAME" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH_NAME:refs/remotes/origin/$BRANCH_NAME"
+          fi
+          git switch -C "$BRANCH_NAME"
+          git add public/specs/registry.json public/specs/*/openapi.json
+          git commit -m "$COMMIT_MESSAGE"
+          git push --force-with-lease origin "HEAD:refs/heads/$BRANCH_NAME"
+
+      - name: Create or update snapshot pull request
+        if: steps.changes.outputs.changed == 'true'
+        working-directory: ${{ runner.temp }}/api-reference
+        env:
+          BRANCH_NAME: docs/update-${{ inputs.service_id }}-openapi
+          PR_TITLE: "docs: update ${{ inputs.service_id }} api snapshot"
+          SERVICE_ID: ${{ inputs.service_id }}
+          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          pr_body="$RUNNER_TEMP/openapi-snapshot-pr.md"
+          printf '%s\n' \
+            '## Source' \
+            '' \
+            "- Repository: https://github.com/$SOURCE_REPOSITORY" \
+            "- Ref: \`$SOURCE_REF\`" \
+            "- Commit: https://github.com/$SOURCE_REPOSITORY/commit/$SOURCE_SHA" \
+            '' \
+            '## Generated changes' \
+            '' \
+            "- Updated \`public/specs/$SERVICE_ID/openapi.json\`" \
+            '- Added the registry source when this is the first publication' \
+            '' \
+            'The snapshot was generated and validated by the source service. The api-reference checks validate the integrated registry and OpenAPI document again.' \
+            > "$pr_body"
+          pr_number="$(gh pr list \
+            --repo groundsgg/api-reference \
+            --head "groundsgg:$BRANCH_NAME" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            gh pr create \
+              --repo groundsgg/api-reference \
+              --base main \
+              --head "$BRANCH_NAME" \
+              --title "$PR_TITLE" \
+              --body-file "$pr_body"
+          else
+            gh pr edit "$pr_number" \
+              --repo groundsgg/api-reference \
+              --title "$PR_TITLE" \
+              --body-file "$pr_body"
+          fi
