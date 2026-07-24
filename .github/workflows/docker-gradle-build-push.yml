@@ -2,6 +2,17 @@ name: Docker Gradle Build and Push
 
 on:
   workflow_call:
+    secrets:
+      PACKAGES_TOKEN:
+        description: >
+          Optional token used to resolve GitHub Packages dependencies. Needed
+          only when a build depends on a Maven package owned by a *different*
+          private repository: Maven packages are repository-scoped, so they
+          inherit that repository's permissions, and the per-job GITHUB_TOKEN
+          is scoped to the calling repository alone. Falls back to
+          GITHUB_TOKEN when unset, which is right for every repo whose
+          dependencies are public or its own.
+        required: false
 
 jobs:
   docker-build-push:
@@ -28,7 +39,7 @@ jobs:
           mkdir -p ~/.gradle
           {
             echo "github.user=${{ github.actor }}"
-            echo "github.token=${{ secrets.GITHUB_TOKEN }}"
+            echo "github.token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}"
           } > ~/.gradle/gradle.properties
 
       - name: Read Gradle project version
@@ -87,7 +98,7 @@ jobs:
           build-args: |
             GITHUB_USER=${{ github.actor }}
           secrets: |
-            github_token=${{ secrets.GITHUB_TOKEN }}
+            github_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Push image
         if: github.event_name != 'pull_request'
@@ -100,7 +111,7 @@ jobs:
           build-args: |
             GITHUB_USER=${{ github.actor }}
           secrets: |
-            github_token=${{ secrets.GITHUB_TOKEN }}
+            github_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Generate SBOM
         if: github.event_name != 'pull_request'

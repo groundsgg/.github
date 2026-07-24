@@ -8,6 +8,17 @@ on:
         required: false
         type: string
         default: blacksmith-4vcpu-ubuntu-2404-arm
+    secrets:
+      PACKAGES_TOKEN:
+        description: >
+          Optional read-only token for resolving GitHub Packages dependencies.
+          Needed only when a build depends on a Maven package owned by a
+          different private repository: Maven packages are repository-scoped,
+          so they inherit that repository's permissions, and the per-job
+          GITHUB_TOKEN is scoped to the calling repository alone. Falls back to
+          GITHUB_TOKEN when unset, which is correct for every repo whose
+          dependencies are public or its own.
+        required: false
 
 jobs:
   release:
@@ -26,16 +37,31 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
 
-      - name: Configure GitHub Packages credentials
+      - name: Configure GitHub Packages credentials for resolution
         run: |
           mkdir -p ~/.gradle
           {
             echo "github.user=${{ github.actor }}"
-            echo "github.token=${{ secrets.GITHUB_TOKEN }}"
+            echo "github.token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}"
           } > ~/.gradle/gradle.properties
 
       - name: Build
         run: ./gradlew build -Pversion=${{ github.ref_name }}
+
+      # Rewritten deliberately, and this cannot be folded into the step above.
+      # Publishing targets *this* repository's registry, which the per-job
+      # GITHUB_TOKEN already covers, while PACKAGES_TOKEN only needs to read
+      # someone else's. The convention plugin resolves its publish credentials
+      # from the `github.token` Gradle property *before* falling back to the
+      # GITHUB_TOKEN environment variable, so leaving a read-only token in the
+      # properties file would make the publish step authenticate with it and
+      # fail on write.
+      - name: Configure GitHub Packages credentials for publishing
+        run: |
+          {
+            echo "github.user=${{ github.actor }}"
+            echo "github.token=${{ secrets.GITHUB_TOKEN }}"
+          } > ~/.gradle/gradle.properties
 
       - name: Publish package
         env:
