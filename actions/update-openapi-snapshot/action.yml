@@ -1,0 +1,38 @@
+name: Update OpenAPI snapshot
+description: Update a service snapshot and onboard its API reference source
+
+inputs:
+  artifact_path:
+    description: Absolute path to the validated openapi.json artifact
+    required: true
+  checkout_path:
+    description: Absolute path to the api-reference checkout
+    required: true
+  service_id:
+    description: Lowercase kebab-case service identifier
+    required: true
+  service_title:
+    description: Public API title
+    required: true
+  service_slug:
+    description: Lowercase kebab-case Scalar slug
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Update OpenAPI snapshot
+      shell: bash
+      env:
+        ARTIFACT_PATH: ${{ inputs.artifact_path }}
+        CHECKOUT_PATH: ${{ inputs.checkout_path }}
+        SERVICE_ID: ${{ inputs.service_id }}
+        SERVICE_TITLE: ${{ inputs.service_title }}
+        SERVICE_SLUG: ${{ inputs.service_slug }}
+      run: |
+        node "$GITHUB_ACTION_PATH/update-openapi-snapshot.mjs" \
+          --artifact-path "$ARTIFACT_PATH" \
+          --checkout-path "$CHECKOUT_PATH" \
+          --service-id "$SERVICE_ID" \
+          --service-title "$SERVICE_TITLE" \
+          --service-slug "$SERVICE_SLUG"
