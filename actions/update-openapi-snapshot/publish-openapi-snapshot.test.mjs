@@ -59,3 +59,14 @@ test('publishing workflow keeps the API reference checkout inside the GitHub wor
   assert.match(workflow, /path: \$\{\{ github\.workspace \}\}\/api-reference/)
   assert.doesNotMatch(workflow, /\$\{\{ runner\.temp \}\}\/api-reference/)
 })
+
+test('publishing workflow sets up Node.js before updating the API snapshot', async () => {
+  assert.equal(existsSync(workflowPath), true, 'reusable publishing workflow must exist')
+  const workflow = await readFile(workflowPath, 'utf8')
+
+  const setupNodeIndex = workflow.indexOf('- name: Set up Node.js')
+  const updateSnapshotIndex = workflow.indexOf('- name: Update API snapshot')
+  assert.notEqual(setupNodeIndex, -1, 'Node.js setup step must exist')
+  assert.notEqual(updateSnapshotIndex, -1, 'snapshot update step must exist')
+  assert.ok(setupNodeIndex < updateSnapshotIndex, 'Node.js must be available before the snapshot action')
+})
