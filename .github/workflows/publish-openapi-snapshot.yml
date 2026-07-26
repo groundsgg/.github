@@ -104,20 +104,33 @@ jobs:
             echo "changed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve publisher bot identity
+        if: steps.changes.outputs.changed == 'true'
+        id: publisher-identity
+        uses: actions/github-script@v9
+        env:
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          result-encoding: string
+          script: |
+            const username = `${process.env.APP_SLUG}[bot]`
+            const { data: user } = await github.rest.users.getByUsername({ username })
+            return `${user.id}+${username}@users.noreply.github.com`
+
       - name: Commit and push snapshot
         if: steps.changes.outputs.changed == 'true'
         working-directory: ${{ github.workspace }}/api-reference
         env:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          BOT_EMAIL: ${{ steps.publisher-identity.outputs.result }}
           BRANCH_NAME: docs/update-${{ inputs.service_id }}-openapi
           COMMIT_MESSAGE: "docs: update ${{ inputs.service_id }} api snapshot"
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -euo pipefail
           bot_user="${APP_SLUG}[bot]"
-          bot_id="$(gh api "/users/$bot_user" --jq '.id')"
           git config user.name "$bot_user"
-          git config user.email "${bot_id}+${bot_user}@users.noreply.github.com"
+          git config user.email "$BOT_EMAIL"
           if git ls-remote --exit-code origin "refs/heads/$BRANCH_NAME" >/dev/null 2>&1; then
             git fetch origin "$BRANCH_NAME:refs/remotes/origin/$BRANCH_NAME"
           fi
@@ -128,7 +141,7 @@ jobs:
 
       - name: Create or update snapshot pull request
         if: steps.changes.outputs.changed == 'true'
-        working-directory: ${{ github.workspace }}/api-reference
+        uses: actions/github-script@v9
         env:
           BRANCH_NAME: docs/update-${{ inputs.service_id }}-openapi
           PR_TITLE: "docs: update ${{ inputs.service_id }} api snapshot"
@@ -136,40 +149,49 @@ jobs:
           SOURCE_REF: ${{ inputs.source_ref }}
           SOURCE_REPOSITORY: ${{ github.repository }}
           SOURCE_SHA: ${{ inputs.source_sha }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-        run: |
-          set -euo pipefail
-          pr_body="$RUNNER_TEMP/openapi-snapshot-pr.md"
-          printf '%s\n' \
-            '## Source' \
-            '' \
-            "- Repository: https://github.com/$SOURCE_REPOSITORY" \
-            "- Ref: \`$SOURCE_REF\`" \
-            "- Commit: https://github.com/$SOURCE_REPOSITORY/commit/$SOURCE_SHA" \
-            '' \
-            '## Generated changes' \
-            '' \
-            "- Updated \`public/specs/$SERVICE_ID/openapi.json\`" \
-            '- Added the registry source when this is the first publication' \
-            '' \
-            'The snapshot was generated and validated by the source service. The api-reference checks validate the integrated registry and OpenAPI document again.' \
-            > "$pr_body"
-          pr_number="$(gh pr list \
-            --repo groundsgg/api-reference \
-            --head "groundsgg:$BRANCH_NAME" \
-            --state open \
-            --json number \
-            --jq '.[0].number // empty')"
-          if [[ -z "$pr_number" ]]; then
-            gh pr create \
-              --repo groundsgg/api-reference \
-              --base main \
-              --head "$BRANCH_NAME" \
-              --title "$PR_TITLE" \
-              --body-file "$pr_body"
-          else
-            gh pr edit "$pr_number" \
-              --repo groundsgg/api-reference \
-              --title "$PR_TITLE" \
-              --body-file "$pr_body"
-          fi
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const owner = 'groundsgg'
+            const repo = 'api-reference'
+            const head = `${owner}:${process.env.BRANCH_NAME}`
+            const body = [
+              '## Source',
+              '',
+              `- Repository: https://github.com/${process.env.SOURCE_REPOSITORY}`,
+              `- Ref: \`${process.env.SOURCE_REF}\``,
+              `- Commit: https://github.com/${process.env.SOURCE_REPOSITORY}/commit/${process.env.SOURCE_SHA}`,
+              '',
+              '## Generated changes',
+              '',
+              `- Updated \`public/specs/${process.env.SERVICE_ID}/openapi.json\``,
+              '- Added the registry source when this is the first publication',
+              '',
+              'The snapshot was generated and validated by the source service. The api-reference checks validate the integrated registry and OpenAPI document again.',
+            ].join('\n')
+            const { data: pullRequests } = await github.rest.pulls.list({
+              owner,
+              repo,
+              head,
+              base: 'main',
+              state: 'open',
+              per_page: 1,
+            })
+            if (pullRequests.length === 0) {
+              await github.rest.pulls.create({
+                owner,
+                repo,
+                head,
+                base: 'main',
+                title: process.env.PR_TITLE,
+                body,
+              })
+            } else {
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: pullRequests[0].number,
+                title: process.env.PR_TITLE,
+                body,
+              })
+            }

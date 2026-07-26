@@ -36,7 +36,8 @@ test('publishing workflow restricts credentials and writes only through a stable
   assert.match(workflow, /repository: groundsgg\/api-reference/)
   assert.match(workflow, /BRANCH_NAME: docs\/update-\$\{\{ inputs\.service_id \}\}-openapi/)
   assert.match(workflow, /git push --force-with-lease origin/)
-  assert.match(workflow, /gh pr (create|edit)/)
+  assert.match(workflow, /github\.rest\.pulls\.create/)
+  assert.match(workflow, /github\.rest\.pulls\.update/)
   assert.doesNotMatch(workflow, /^\s+pull_request:/m)
   assert.doesNotMatch(workflow, /target_repository|target_path|personal access token/i)
 })
@@ -69,4 +70,13 @@ test('publishing workflow sets up Node.js before updating the API snapshot', asy
   assert.notEqual(setupNodeIndex, -1, 'Node.js setup step must exist')
   assert.notEqual(updateSnapshotIndex, -1, 'snapshot update step must exist')
   assert.ok(setupNodeIndex < updateSnapshotIndex, 'Node.js must be available before the snapshot action')
+})
+
+test('publishing workflow uses the GitHub API without requiring the gh CLI', async () => {
+  assert.equal(existsSync(workflowPath), true, 'reusable publishing workflow must exist')
+  const workflow = await readFile(workflowPath, 'utf8')
+
+  assert.doesNotMatch(workflow, /(^|\s)gh\s+(api|pr)\b/m)
+  assert.equal(workflow.match(/uses: actions\/github-script@v9/g)?.length, 2)
+  assert.match(workflow, /github-token: \$\{\{ steps\.app-token\.outputs\.token \}\}/)
 })
