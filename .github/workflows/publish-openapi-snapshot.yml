@@ -70,6 +70,13 @@ jobs:
           fetch-depth: 0
           path: ${{ github.workspace }}/api-reference
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: ${{ github.workspace }}/api-reference/package-lock.json
+
       - name: Update API snapshot
         uses: groundsgg/.github/actions/update-openapi-snapshot@main
         with:
@@ -78,13 +85,6 @@ jobs:
           service_id: ${{ inputs.service_id }}
           service_title: ${{ inputs.service_title }}
           service_slug: ${{ inputs.service_slug }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: ${{ github.workspace }}/api-reference/package-lock.json
 
       - name: Validate API reference
         working-directory: ${{ github.workspace }}/api-reference
