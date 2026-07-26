@@ -51,3 +51,11 @@ test('publishing workflow validates the integrated API reference before git chan
   assert.match(workflow, /npm ci\n\s+npm run validate:specs\n\s+npm test\n\s+npm run build/)
   assert.match(workflow, /git status --porcelain/)
 })
+
+test('publishing workflow keeps the API reference checkout inside the GitHub workspace', async () => {
+  assert.equal(existsSync(workflowPath), true, 'reusable publishing workflow must exist')
+  const workflow = await readFile(workflowPath, 'utf8')
+
+  assert.match(workflow, /path: \$\{\{ github\.workspace \}\}\/api-reference/)
+  assert.doesNotMatch(workflow, /\$\{\{ runner\.temp \}\}\/api-reference/)
+})

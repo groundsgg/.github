@@ -68,13 +68,13 @@ jobs:
           ref: main
           token: ${{ steps.app-token.outputs.token }}
           fetch-depth: 0
-          path: ${{ runner.temp }}/api-reference
+          path: ${{ github.workspace }}/api-reference
 
       - name: Update API snapshot
         uses: groundsgg/.github/actions/update-openapi-snapshot@main
         with:
           artifact_path: ${{ runner.temp }}/openapi-artifact/openapi.json
-          checkout_path: ${{ runner.temp }}/api-reference
+          checkout_path: ${{ github.workspace }}/api-reference
           service_id: ${{ inputs.service_id }}
           service_title: ${{ inputs.service_title }}
           service_slug: ${{ inputs.service_slug }}
@@ -84,10 +84,10 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: ${{ runner.temp }}/api-reference/package-lock.json
+          cache-dependency-path: ${{ github.workspace }}/api-reference/package-lock.json
 
       - name: Validate API reference
-        working-directory: ${{ runner.temp }}/api-reference
+        working-directory: ${{ github.workspace }}/api-reference
         run: |
           npm ci
           npm run validate:specs
@@ -96,7 +96,7 @@ jobs:
 
       - name: Detect snapshot changes
         id: changes
-        working-directory: ${{ runner.temp }}/api-reference
+        working-directory: ${{ github.workspace }}/api-reference
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -106,7 +106,7 @@ jobs:
 
       - name: Commit and push snapshot
         if: steps.changes.outputs.changed == 'true'
-        working-directory: ${{ runner.temp }}/api-reference
+        working-directory: ${{ github.workspace }}/api-reference
         env:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
           BRANCH_NAME: docs/update-${{ inputs.service_id }}-openapi
@@ -128,7 +128,7 @@ jobs:
 
       - name: Create or update snapshot pull request
         if: steps.changes.outputs.changed == 'true'
-        working-directory: ${{ runner.temp }}/api-reference
+        working-directory: ${{ github.workspace }}/api-reference
         env:
           BRANCH_NAME: docs/update-${{ inputs.service_id }}-openapi
           PR_TITLE: "docs: update ${{ inputs.service_id }} api snapshot"
