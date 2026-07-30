@@ -43,6 +43,7 @@ jobs:
   publish:
     if: github.repository_owner == 'groundsgg'
     runs-on: arc-linux
+    timeout-minutes: 20
     steps:
       - name: Download OpenAPI artifact
         uses: actions/download-artifact@v7

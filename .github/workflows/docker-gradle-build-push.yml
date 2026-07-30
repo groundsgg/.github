@@ -2,6 +2,16 @@ name: Docker Gradle Build and Push
 
 on:
   workflow_call:
+    inputs:
+      runner:
+        description: >
+          Runner label. Defaults to a 2 vCPU amd64 Blacksmith runner. amd64 is
+          deliberate (see the comment on the job): the clusters are amd64 and
+          building amd64 on arm64 would mean QEMU. Pass a 4 vCPU label if a
+          Dockerfile is genuinely CPU-bound enough to need it.
+        required: false
+        type: string
+        default: blacksmith-2vcpu-ubuntu-2404
     secrets:
       PACKAGES_TOKEN:
         description: >
@@ -14,6 +24,10 @@ on:
           dependencies are public or its own.
         required: false
 
+concurrency:
+  group: docker-build-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   docker-build-push:
     # amd64 on purpose. The clusters this image runs on are amd64 (both UKS
@@ -21,7 +35,8 @@ jobs:
     # then dies at exec with "exec format error" — which is exactly what
     # happened to grounds-forge 4.3.0 in its migrate init container. Building
     # an amd64 image on an arm64 runner would mean QEMU for the whole build.
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ${{ inputs.runner }}
+    timeout-minutes: 30
     env:
       TAG_TYPE: ${{ github.ref_type == 'tag' && 'release' || 'edge' }}
     steps:
@@ -33,6 +48,11 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "25"
+          # Without this the `./gradlew -q properties` step below resolves the
+          # whole dependency graph from scratch on every run — measured at ~98s
+          # median in service-moderation, a third of the job, to read one
+          # version string.
+          cache: "gradle"
 
       - name: Configure GitHub Packages credentials
         run: |
@@ -52,6 +72,12 @@ jobs:
 
       - name: Setup Blacksmith Builder
         uses: useblacksmith/setup-docker-builder@v1
+        with:
+          # Blacksmith skips pruning entirely unless this is set, so these
+          # disks had grown unbounded since the migration. One cold build of
+          # service-moderation measures 2.32 GB, so 3 GB keeps a full build's
+          # cache and prunes only the accumulated churn. Billed at $0.50/GB/mo.
+          max-cache-size-mb: 3072
 
       - name: Prepare Docker auth config
         run: |

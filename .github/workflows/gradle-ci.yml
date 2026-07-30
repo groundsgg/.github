@@ -4,10 +4,17 @@ on:
   workflow_call:
     inputs:
       runner:
-        description: "Runner label. Defaults to a 4 vCPU arm64 Blacksmith runner, which has Docker for testcontainers / Quarkus dev-services. Pass an amd64 label (blacksmith-4vcpu-ubuntu-2404) if a test image has no arm64 variant."
+        description: >
+          Runner label. Leave unset and the job picks one by repository
+          visibility: GitHub's arm64 hosted runner in public repos, where it
+          is free and has 4 vCPUs, and a 2 vCPU arm64 Blacksmith runner in
+          private repos, where GitHub-hosted arm64 is not offered. Set it
+          explicitly to override — an amd64 label if a test image has no
+          arm64 variant, or a larger Blacksmith label for a build that is
+          measurably CPU-bound and on someone's critical path.
         required: false
         type: string
-        default: blacksmith-4vcpu-ubuntu-2404-arm
+        default: ""
     secrets:
       PACKAGES_TOKEN:
         description: >
@@ -20,9 +27,21 @@ on:
           dependencies are public or its own.
         required: false
 
+concurrency:
+  group: gradle-ci-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    runs-on: ${{ inputs.runner }}
+    # Falls back to Blacksmith whenever `visibility` is absent from the event
+    # payload, because GitHub-hosted arm64 does not exist for private repos and
+    # guessing wrong there means "no runner matches" rather than a bigger bill.
+    runs-on: >-
+      ${{ inputs.runner != '' && inputs.runner
+          || (github.event.repository.visibility == 'public'
+              && 'ubuntu-24.04-arm'
+              || 'blacksmith-2vcpu-ubuntu-2404-arm') }}
+    timeout-minutes: 30
     steps:
       - name: Check out
         uses: actions/checkout@v7
