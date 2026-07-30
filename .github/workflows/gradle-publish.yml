@@ -4,10 +4,10 @@ on:
   workflow_call:
     inputs:
       runner:
-        description: "Runner label. Defaults to a 4 vCPU arm64 Blacksmith runner, which has Docker for testcontainers / Quarkus dev-services. Pass an amd64 label (blacksmith-4vcpu-ubuntu-2404) if a test image has no arm64 variant."
+        description: "Runner label. Defaults to a 2 vCPU arm64 Blacksmith runner, which has Docker for testcontainers / Quarkus dev-services. Pass an amd64 label (blacksmith-2vcpu-ubuntu-2404) if a test image has no arm64 variant, or a 4 vCPU label if a build is measurably CPU-bound and on someone's critical path."
         required: false
         type: string
-        default: blacksmith-4vcpu-ubuntu-2404-arm
+        default: blacksmith-2vcpu-ubuntu-2404-arm
     secrets:
       PACKAGES_TOKEN:
         description: >

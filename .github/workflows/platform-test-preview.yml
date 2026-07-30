@@ -82,7 +82,7 @@ jobs:
     # amd64 on purpose: the preview image is deployed onto the amd64 UKS
     # node pools. An arm64-only image pulls fine and then dies at exec with
     # "exec format error". Building amd64 on an arm64 runner would mean QEMU.
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     outputs:
       image-tag: ${{ steps.tag.outputs.value }}
     permissions:
