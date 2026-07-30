@@ -5,13 +5,13 @@ on:
     inputs:
       runner:
         description: >
-          Runner label. Defaults to a 2 vCPU amd64 Blacksmith runner. amd64 is
-          deliberate (see the comment on the job): the clusters are amd64 and
-          building amd64 on arm64 would mean QEMU. Pass a 4 vCPU label if a
-          Dockerfile is genuinely CPU-bound enough to need it.
+          Runner label. Leave unset and the job picks one by repository
+          visibility: GitHub's free amd64 runner in public repos, a 2 vCPU
+          amd64 Blacksmith runner in private ones. amd64 either way — the
+          clusters are amd64 and building amd64 on arm64 would mean QEMU.
         required: false
         type: string
-        default: blacksmith-2vcpu-ubuntu-2404
+        default: ""
     secrets:
       PACKAGES_TOKEN:
         description: >
@@ -35,7 +35,17 @@ jobs:
     # then dies at exec with "exec format error" — which is exactly what
     # happened to grounds-forge 4.3.0 in its migrate init container. Building
     # an amd64 image on an arm64 runner would mean QEMU for the whole build.
-    runs-on: ${{ inputs.runner }}
+    # Public repos run on GitHub's free amd64 runner; private ones stay on
+    # Blacksmith, where the layer cache lives on a real disk and where
+    # GitHub-hosted minutes would come out of the org's 2,000/month allowance
+    # at four times the Blacksmith rate. Tests `visibility` rather than
+    # `repository.private`, which GitHub would coerce to a number — an absent
+    # field then compares equal to false.
+    runs-on: >-
+      ${{ inputs.runner != '' && inputs.runner
+          || (github.event.repository.visibility == 'public'
+              && 'ubuntu-24.04'
+              || 'blacksmith-2vcpu-ubuntu-2404') }}
     timeout-minutes: 30
     env:
       TAG_TYPE: ${{ github.ref_type == 'tag' && 'release' || 'edge' }}
@@ -70,13 +80,21 @@ jobs:
           version="$(printf '%s\n' "$props" | awk -F': ' '/^version: /{print $2; exit}')"
           echo "value=$version" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Blacksmith Builder
+      # Two mutually exclusive builders. The Blacksmith actions only run on
+      # Blacksmith runners, so a public repo on a GitHub-hosted runner needs
+      # the upstream buildx pair instead.
+      - name: Set up Buildx (public repos)
+        if: github.event.repository.visibility == 'public'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Setup Blacksmith Builder (private repos)
+        if: github.event.repository.visibility != 'public'
         uses: useblacksmith/setup-docker-builder@v1
         with:
           # Blacksmith skips pruning entirely unless this is set, so these
-          # disks had grown unbounded since the migration. One cold build of
-          # service-moderation measures 2.32 GB, so 3 GB keeps a full build's
-          # cache and prunes only the accumulated churn. Billed at $0.50/GB/mo.
+          # disks had grown unbounded since the migration. The live
+          # service-permissions disk measures 2.43 GB, so 3 GB keeps a full
+          # build's cache and prunes only churn. Billed at $0.50/GB/mo.
           max-cache-size-mb: 3072
 
       - name: Prepare Docker auth config
@@ -112,7 +130,31 @@ jobs:
             org.opencontainers.image.vendor=Grounds
             org.opencontainers.image.ref.name=${{ github.sha }}
 
-      - name: Build image
+      # Public repos build with the upstream action and the GitHub Actions
+      # cache. Note what that does *not* cover: BuildKit `RUN --mount=type=cache`
+      # mounts are never exported by the gha cache backend, only by a real
+      # disk — so the Gradle dependency cache these Dockerfiles mount starts
+      # empty on every public run. Layers still cache; dependency resolution
+      # does not. That is the cost of getting off a paid runner here.
+      - name: Build image (public repos)
+        if: github.event.repository.visibility == 'public'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            GITHUB_USER=${{ github.actor }}
+          secrets: |
+            github_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Build image (private repos)
+        if: github.event.repository.visibility != 'public'
         uses: useblacksmith/build-push-action@v2
         with:
           context: .
@@ -126,8 +168,24 @@ jobs:
           secrets: |
             github_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
 
-      - name: Push image
-        if: github.event_name != 'pull_request'
+      - name: Push image (public repos)
+        if: github.event_name != 'pull_request' && github.event.repository.visibility == 'public'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          platforms: linux/amd64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          build-args: |
+            GITHUB_USER=${{ github.actor }}
+          secrets: |
+            github_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Push image (private repos)
+        if: github.event_name != 'pull_request' && github.event.repository.visibility != 'public'
         uses: useblacksmith/build-push-action@v2
         with:
           push: true
