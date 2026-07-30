@@ -7,6 +7,10 @@ on:
         description: 'The GitHub token used to create releases.'
         required: true
 
+concurrency:
+  group: release-please-${{ github.repository }}
+  cancel-in-progress: false
+
 jobs:
   release-please:
     name: Create Release
@@ -19,6 +23,7 @@ jobs:
       ${{ github.event.repository.visibility == 'public'
           && 'ubuntu-24.04-arm'
           || 'blacksmith-2vcpu-ubuntu-2404-arm' }}
+    timeout-minutes: 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

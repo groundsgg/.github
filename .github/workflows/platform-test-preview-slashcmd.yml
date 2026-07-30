@@ -53,6 +53,7 @@ jobs:
     # here because reusable workflows shouldn't trust their callers.
     if: github.event.issue.pull_request != null
     runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    timeout-minutes: 10
     permissions:
       issues: write
       pull-requests: write

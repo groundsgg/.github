@@ -83,6 +83,7 @@ jobs:
     # node pools. An arm64-only image pulls fine and then dies at exec with
     # "exec format error". Building amd64 on an arm64 runner would mean QEMU.
     runs-on: blacksmith-2vcpu-ubuntu-2404
+    timeout-minutes: 30
     outputs:
       image-tag: ${{ steps.tag.outputs.value }}
     permissions:
@@ -99,6 +100,12 @@ jobs:
 
       - name: Setup Blacksmith Builder
         uses: useblacksmith/setup-docker-builder@v1
+        with:
+          # Blacksmith skips pruning entirely unless this is set, so these
+          # disks had grown unbounded since the migration. One cold build of
+          # service-moderation measures 2.32 GB, so 3 GB keeps a full build's
+          # cache and prunes only the accumulated churn. Billed at $0.50/GB/mo.
+          max-cache-size-mb: 3072
 
       - name: Prepare Docker auth config
         run: |
@@ -151,6 +158,7 @@ jobs:
     if: github.event.action != 'closed'
     needs: build
     runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    timeout-minutes: 20
     permissions:
       pull-requests: write
     steps:
@@ -350,6 +358,7 @@ jobs:
   evict:
     if: github.event.action == 'closed'
     runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    timeout-minutes: 10
     steps:
       - name: Mint forge access token
         id: token
