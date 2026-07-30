@@ -120,6 +120,14 @@ jobs:
           push: true
           platforms: linux/amd64
           tags: ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.value }}
+          # Plugin Dockerfiles resolve gg.grounds Maven packages from GitHub
+          # Packages during the build, behind
+          #   RUN --mount=type=secret,id=github_token,required=true
+          # The regular image build (docker-gradle-build-push.yml) already
+          # passes this; without it here every plugin PR-preview fails with
+          # "secret github_token: not found" before it ever starts.
+          secrets: |
+            github_token=${{ secrets.GITHUB_TOKEN }}
 
       # Pinned to a full version on purpose. Unlike actions/checkout and the
       # docker/* actions above, sigstore/cosign-installer publishes no moving
