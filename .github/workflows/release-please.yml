@@ -10,7 +10,15 @@ on:
 jobs:
   release-please:
     name: Create Release
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+    # Free GitHub-hosted runner in public repos; Blacksmith in private ones,
+    # where GitHub-hosted arm64 is not offered. Tests `visibility` rather than
+    # `repository.private` because GitHub coerces `==` operands to numbers, so
+    # an absent `private` field would compare equal to false and hand a private
+    # repo a label that does not exist there.
+    runs-on: >-
+      ${{ github.event.repository.visibility == 'public'
+          && 'ubuntu-24.04-arm'
+          || 'blacksmith-2vcpu-ubuntu-2404-arm' }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
