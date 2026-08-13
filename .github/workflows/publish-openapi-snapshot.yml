@@ -42,7 +42,10 @@ concurrency:
 jobs:
   publish:
     if: github.repository_owner == 'groundsgg'
-    runs-on: arc-linux
+    # Was arc-linux. The self-hosted ARC scale sets were decommissioned, so
+    # nothing serves that label any more and jobs would queue until timeout.
+    # This job is Node-only, so a GitHub-hosted runner covers it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - name: Download OpenAPI artifact
