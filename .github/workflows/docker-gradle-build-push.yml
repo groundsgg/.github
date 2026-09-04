@@ -41,20 +41,23 @@ jobs:
     # at four times the Blacksmith rate. Tests `visibility` rather than
     # `repository.private`, which GitHub would coerce to a number — an absent
     # field then compares equal to false.
-    # Stays on Blacksmith for private repos, unlike the rest of these workflows.
-    # This job builds through `useblacksmith/setup-docker-builder` and
-    # `useblacksmith/build-push-action` on the private path -- actions bound to
-    # Blacksmith's own builders and sticky disks -- so moving the runner without
-    # replacing them is not a swap, it is a break. Public repos already take the
-    # upstream docker/* pair on a hosted runner and are unaffected.
-    #
-    # Moving this needs the two actions replaced and a new answer for the layer
-    # cache the sticky disks were providing. That is its own change.
+      # Self-hosted ARC runners on hbr1, addressed by the calling repository's own
+      # name. Public repos keep a hosted runner -- a fork PR would otherwise run
+      # arbitrary code on hbr1 -- and Blacksmith stays as the last branch for
+      # events whose payload carries no repository, where an empty label would
+      # match no runner at all.
+      #
+      # The useblacksmith/* build actions below are kept even off Blacksmith:
+      # measured, they work on these runners -- service-maps' docker-build-push
+      # succeeded three times on grounds-service-maps runners using this very
+      # workflow. Leaving the job on Blacksmith is the worse option while that
+      # pool is not serving: jobs sat queued there for over an hour.
     runs-on: >-
       ${{ inputs.runner != '' && inputs.runner
           || (github.event.repository.visibility == 'public'
-              && 'ubuntu-24.04'
-              || 'blacksmith-2vcpu-ubuntu-2404') }}
+              && 'ubuntu-24.04')
+          || github.event.repository.name
+          || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     env:
       TAG_TYPE: ${{ github.ref_type == 'tag' && 'release' || 'edge' }}
