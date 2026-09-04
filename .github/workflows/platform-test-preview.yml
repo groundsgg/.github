@@ -82,6 +82,13 @@ jobs:
     # amd64 on purpose: the preview image is deployed onto the amd64 UKS
     # node pools. An arm64-only image pulls fine and then dies at exec with
     # "exec format error". Building amd64 on an arm64 runner would mean QEMU.
+      # Stays on Blacksmith while the two jobs below move to hbr1. This one
+      # builds through `useblacksmith/setup-docker-builder` and
+      # `useblacksmith/build-push-action`, which are bound to Blacksmith's own
+      # builders and sticky disks -- `max-cache-size-mb` below configures theirs.
+      # Moving it is not a runner swap: the actions have to be replaced with the
+      # upstream docker/* ones first, and that needs a new answer for the layer
+      # cache those sticky disks were providing.
     runs-on: blacksmith-2vcpu-ubuntu-2404
     timeout-minutes: 30
     outputs:
@@ -166,7 +173,22 @@ jobs:
   mint:
     if: github.event.action != 'closed'
     needs: build
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+      # Self-hosted ARC runners on hbr1. The label is the calling repository's
+      # own name, which is how each repo reaches its own scale set without
+      # passing anything.
+      #
+      # Read the three branches in order. A public repo keeps a GitHub-hosted
+      # runner: on a self-hosted pool a fork PR would run arbitrary code on
+      # hbr1, which also hosts production containers. A private repo goes to
+      # its own runner. And if `repository` is missing from the event payload
+      # -- which is why this used to fall back to Blacksmith -- the name is
+      # empty and Blacksmith still catches it, because an empty label matches
+      # no runner at all and the job would queue until someone cancels it.
+    runs-on: >-
+      ${{ (github.event.repository.visibility == 'public'
+            && 'ubuntu-24.04-arm')
+          || github.event.repository.name
+          || 'blacksmith-2vcpu-ubuntu-2404-arm' }}
     timeout-minutes: 20
     permissions:
       pull-requests: write
@@ -366,7 +388,22 @@ jobs:
   # ── Evict on PR close ─────────────────────────────────────────────
   evict:
     if: github.event.action == 'closed'
-    runs-on: blacksmith-2vcpu-ubuntu-2404-arm
+      # Self-hosted ARC runners on hbr1. The label is the calling repository's
+      # own name, which is how each repo reaches its own scale set without
+      # passing anything.
+      #
+      # Read the three branches in order. A public repo keeps a GitHub-hosted
+      # runner: on a self-hosted pool a fork PR would run arbitrary code on
+      # hbr1, which also hosts production containers. A private repo goes to
+      # its own runner. And if `repository` is missing from the event payload
+      # -- which is why this used to fall back to Blacksmith -- the name is
+      # empty and Blacksmith still catches it, because an empty label matches
+      # no runner at all and the job would queue until someone cancels it.
+    runs-on: >-
+      ${{ (github.event.repository.visibility == 'public'
+            && 'ubuntu-24.04-arm')
+          || github.event.repository.name
+          || 'blacksmith-2vcpu-ubuntu-2404-arm' }}
     timeout-minutes: 10
     steps:
       - name: Mint forge access token

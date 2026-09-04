@@ -41,11 +41,23 @@ jobs:
     # at four times the Blacksmith rate. Tests `visibility` rather than
     # `repository.private`, which GitHub would coerce to a number — an absent
     # field then compares equal to false.
+      # Self-hosted ARC runners on hbr1. The label is the calling repository's
+      # own name, which is how each repo reaches its own scale set without
+      # passing anything.
+      #
+      # Read the three branches in order. A public repo keeps a GitHub-hosted
+      # runner: on a self-hosted pool a fork PR would run arbitrary code on
+      # hbr1, which also hosts production containers. A private repo goes to
+      # its own runner. And if `repository` is missing from the event payload
+      # -- which is why this used to fall back to Blacksmith -- the name is
+      # empty and Blacksmith still catches it, because an empty label matches
+      # no runner at all and the job would queue until someone cancels it.
     runs-on: >-
       ${{ inputs.runner != '' && inputs.runner
           || (github.event.repository.visibility == 'public'
-              && 'ubuntu-24.04'
-              || 'blacksmith-2vcpu-ubuntu-2404') }}
+              && 'ubuntu-24.04')
+          || github.event.repository.name
+          || 'blacksmith-2vcpu-ubuntu-2404' }}
     timeout-minutes: 30
     env:
       TAG_TYPE: ${{ github.ref_type == 'tag' && 'release' || 'edge' }}
