@@ -2,6 +2,14 @@
 
 Organization-level .github repository which contains our issue templates, pull request templates, reusable workflows and more.
 
+## Docker Gradle builds
+
+`docker-gradle-build-push.yml` uses upstream Docker Buildx on the repository's ARC runner (private repositories) or GitHub-hosted amd64 runners (public repositories). The optional `runner` input remains available. No Blacksmith builder is required.
+
+The calling workflow must grant `contents: read` and `packages: write` for image publication. Builds import repository-scoped GitHub Actions layer cache using `<owner>/<repository>-amd64`; non-PR runs export it in `mode=max`. Pull requests only build/load the image and never publish image tags or write cache. A missing cache produces a cold build, not a build failure. Intermediate build layers are not exported into potentially public GHCR packages.
+
+The layer cache does not persist BuildKit cache mounts such as Gradle dependency caches. The first builds after migration may therefore take longer. GitHub Packages credentials remain BuildKit secrets, not build arguments. Published images remain `linux/amd64`, with the existing release/edge tags and SBOM upload.
+
 ## OpenAPI snapshot publishing
 
 The reusable `publish-openapi-snapshot.yml` workflow accepts a validated OpenAPI artifact from a Grounds service and opens or updates a reviewable pull request in `groundsgg/api-reference`. It never pushes to the target's `main` branch and has no PAT fallback.
