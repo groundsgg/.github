@@ -10,6 +10,8 @@ The calling workflow must grant `contents: read` and `packages: write` for image
 
 The layer cache does not persist BuildKit cache mounts such as Gradle dependency caches. The first builds after migration may therefore take longer. GitHub Packages credentials remain BuildKit secrets, not build arguments. Published images remain `linux/amd64`, with the existing release/edge tags and SBOM upload.
 
+The `platform-test-preview.yml` build stage uses the same upstream Buildx actions. Its cache scope is `<owner>/<repository>-preview-<PR number>-amd64`, separate from production cache and other previews. Digest-based signing and the existing preview lifecycle are unchanged. Testing the builder does not require starting the full preview lifecycle.
+
 ## OpenAPI snapshot publishing
 
 The reusable `publish-openapi-snapshot.yml` workflow accepts a validated OpenAPI artifact from a Grounds service and opens or updates a reviewable pull request in `groundsgg/api-reference`. It never pushes to the target's `main` branch and has no PAT fallback.
