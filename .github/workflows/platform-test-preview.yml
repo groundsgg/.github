@@ -82,22 +82,13 @@ jobs:
     # amd64 on purpose: the preview image is deployed onto the amd64 UKS
     # node pools. An arm64-only image pulls fine and then dies at exec with
     # "exec format error". Building amd64 on an arm64 runner would mean QEMU.
-      # Self-hosted ARC runners on hbr1, addressed by the calling repository's own
-      # name. Public repos keep a hosted runner -- a fork PR would otherwise run
-      # arbitrary code on hbr1 -- and Blacksmith stays as the last branch for
-      # events whose payload carries no repository, where an empty label would
-      # match no runner at all.
-      #
-      # The useblacksmith/* build actions below are kept even off Blacksmith:
-      # measured, they work on these runners -- service-maps' docker-build-push
-      # succeeded three times on grounds-service-maps runners using this very
-      # workflow. Leaving the job on Blacksmith is the worse option while that
-      # pool is not serving: jobs sat queued there for over an hour.
+    # Keep public PRs on hosted runners and private repositories on ARC.
+    # Missing event payloads fall back to a hosted runner, not Blacksmith.
     runs-on: >-
       ${{ (github.event.repository.visibility == 'public'
             && 'ubuntu-24.04')
           || github.event.repository.name
-          || 'blacksmith-2vcpu-ubuntu-2404' }}
+          || 'ubuntu-24.04' }}
     timeout-minutes: 30
     outputs:
       image-tag: ${{ steps.tag.outputs.value }}
@@ -113,20 +104,16 @@ jobs:
       - id: tag
         run: echo "value=pr-${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
 
-      - name: Setup Blacksmith Builder
-        uses: useblacksmith/setup-docker-builder@v1
-        with:
-          # Blacksmith skips pruning entirely unless this is set, so these
-          # disks had grown unbounded since the migration. One cold build of
-          # service-moderation measures 2.32 GB, so 3 GB keeps a full build's
-          # cache and prunes only the accumulated churn. Billed at $0.50/GB/mo.
-          max-cache-size-mb: 3072
-
       - name: Prepare Docker auth config
         run: |
           docker_config="${{ runner.temp }}/docker-config"
           mkdir -p "$docker_config"
           echo "DOCKER_CONFIG=${docker_config}" >> "$GITHUB_ENV"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver: docker-container
 
       - uses: docker/login-action@v4
         with:
@@ -136,12 +123,15 @@ jobs:
 
       - name: Build + push
         id: build
-        uses: useblacksmith/build-push-action@v2
+        uses: docker/build-push-action@v7
         with:
           context: .
           push: true
           platforms: linux/amd64
           tags: ghcr.io/${{ github.repository }}:${{ steps.tag.outputs.value }}
+          # Keep preview cache separate from production and from other PRs.
+          cache-from: type=gha,scope=${{ github.repository }}-preview-${{ github.event.pull_request.number }}-amd64
+          cache-to: type=gha,scope=${{ github.repository }}-preview-${{ github.event.pull_request.number }}-amd64,mode=max
           # Plugin Dockerfiles resolve gg.grounds Maven packages from GitHub
           # Packages during the build, behind
           #   RUN --mount=type=secret,id=github_token,required=true

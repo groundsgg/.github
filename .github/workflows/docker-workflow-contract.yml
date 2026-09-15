@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/docker-gradle-build-push.yml'
+      - '.github/workflows/platform-test-preview.yml'
       - '.github/workflows/docker-workflow-contract.yml'
       - 'tests/test_docker_workflow.py'
       - 'tests/docker-smoke/**'
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/docker-gradle-build-push.yml'
+      - '.github/workflows/platform-test-preview.yml'
       - '.github/workflows/docker-workflow-contract.yml'
       - 'tests/test_docker_workflow.py'
       - 'tests/docker-smoke/**'

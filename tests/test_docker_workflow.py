@@ -20,6 +20,24 @@ def resolve(value, context):
 
 
 class DockerWorkflowTest(unittest.TestCase):
+    def test_preview_builder_retains_signing_and_pr_isolated_cache(self):
+        workflow = yaml.safe_load((WORKFLOW.parent / 'platform-test-preview.yml').read_text())
+        build = workflow['jobs']['build']
+        steps = build['steps']
+        self.assertFalse(any('useblacksmith/' in step.get('uses', '') for step in steps))
+        builder_index = next(i for i, step in enumerate(steps) if 'setup-buildx-action' in step.get('uses', ''))
+        auth_index = next(i for i, step in enumerate(steps) if step.get('name') == 'Prepare Docker auth config')
+        self.assertLess(auth_index, builder_index, 'DOCKER_CONFIG relocation must precede builder setup')
+        image = next(step for step in steps if step.get('id') == 'build')
+        self.assertIn('docker/build-push-action', image['uses'])
+        self.assertTrue(image['with']['push'])
+        self.assertEqual(image['with']['platforms'], 'linux/amd64')
+        context = {'github.repository': 'groundsgg/plugin-social', 'github.event.pull_request.number': 123}
+        self.assertEqual(resolve(image['with']['cache-to'], context), 'type=gha,scope=groundsgg/plugin-social-preview-123-amd64,mode=max')
+        signing = next(step for step in steps if step.get('name') == 'Sign image')
+        self.assertIn('steps.build.outputs.digest', signing['run'])
+        self.assertEqual(build['if'], "github.event.action != 'closed'")
+
     def test_build_and_cache_contract_for_public_and_private_events(self):
         job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
         for visibility in ['public', 'private']:
