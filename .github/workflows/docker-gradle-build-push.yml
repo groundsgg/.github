@@ -44,7 +44,14 @@ jobs:
               && 'ubuntu-24.04')
           || github.event.repository.name
           || 'ubuntu-24.04' }}
-    timeout-minutes: 30
+    # Cold ARC builds can exceed 30m downloading builder/runtime base images
+    # even after Gradle succeeds. Keep the default repo-ARC path bounded at
+    # 60m; public/hosted fallbacks and explicit runner overrides retain 30m.
+    timeout-minutes: >-
+      ${{ inputs.runner == ''
+          && github.event.repository.visibility != 'public'
+          && github.event.repository.name
+          && 60 || 30 }}
     env:
       TAG_TYPE: ${{ github.ref_type == 'tag' && 'release' || 'edge' }}
     steps:
