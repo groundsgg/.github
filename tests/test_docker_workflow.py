@@ -55,6 +55,31 @@ class DockerWorkflowTest(unittest.TestCase):
                         self.assertIn('mode=max', cache_writes[0]['with']['cache-to'])
                     expected_runner = 'ubuntu-24.04' if visibility == 'public' else 'plugin-notifications'
                     self.assertEqual(resolve(job['runs-on'], context).strip(), expected_runner)
+                    expected_budget = 30 if visibility == 'public' else 60
+                    self.assertEqual(int(resolve(job['timeout-minutes'], context)), expected_budget)
+
+    def test_cold_arc_budget_preserves_hosted_override_and_fallback_limits(self):
+        job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
+        cases = [
+            ('private', '', 'service-moderation', 60),
+            ('internal', '', 'service-moderation', 60),
+            ('public', '', 'service-moderation', 30),
+            ('', '', '', 30),
+            ('', '', 'service-moderation', 60),
+            ('private', 'ubuntu-24.04', 'service-moderation', 30),
+            ('private', 'custom-amd64', 'service-moderation', 30),
+            ('public', 'custom-amd64', 'service-moderation', 30),
+        ]
+        for visibility, runner, name, expected in cases:
+            with self.subTest(visibility=visibility, runner=runner, name=name):
+                context = {
+                    'inputs.runner': runner,
+                    'github.event.repository.visibility': visibility,
+                    'github.event.repository.name': name,
+                }
+                budget = int(resolve(job['timeout-minutes'], context))
+                self.assertEqual(budget, expected)
+                self.assertLessEqual(budget, 60)
 
     def test_runner_override_and_missing_event_payload(self):
         job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
