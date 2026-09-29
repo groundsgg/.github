@@ -128,10 +128,16 @@ jobs:
             org.opencontainers.image.vendor=Grounds
             org.opencontainers.image.ref.name=${{ github.sha }}
 
-      # Repository-scoped GHA cache survives ephemeral ARC runners without
-      # exposing intermediate build layers in a potentially public GHCR
-      # package. PRs never write cache or image tags. Cache mounts (e.g. Gradle
-      # dependency mounts) are not exported; the first builds may be colder.
+      # The GHA layer cache is used on GitHub-hosted runners only. From the
+      # self-hosted ARC runners it downloads at tens of KB/s: plugin-match
+      # 0.9.0 (2026-09-29) spent 20+ minutes pulling one 93 MB cached layer at
+      # ~60 KB/s for a build that takes a few minutes uncached — and the
+      # 60-minute ARC timeout below exists for the same symptom. On ARC the
+      # build runs without a layer cache instead. On hosted runners the
+      # repository-scoped cache still saves time without exposing intermediate
+      # layers in a potentially public GHCR package. PRs never write cache or
+      # image tags. Cache mounts (e.g. Gradle dependency mounts) are not
+      # exported either way.
       - name: Build image (pull requests)
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v7
@@ -142,7 +148,7 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ github.repository }}-amd64
+          cache-from: ${{ runner.environment == 'github-hosted' && format('type=gha,scope={0}-amd64', github.repository) || '' }}
           build-args: |
             GITHUB_USER=${{ github.actor }}
           secrets: |
@@ -158,8 +164,8 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ github.repository }}-amd64
-          cache-to: type=gha,scope=${{ github.repository }}-amd64,mode=max
+          cache-from: ${{ runner.environment == 'github-hosted' && format('type=gha,scope={0}-amd64', github.repository) || '' }}
+          cache-to: ${{ runner.environment == 'github-hosted' && format('type=gha,scope={0}-amd64,mode=max', github.repository) || '' }}
           build-args: |
             GITHUB_USER=${{ github.actor }}
           secrets: |
