@@ -51,8 +51,6 @@ class DockerWorkflowTest(unittest.TestCase):
                         'github.event_name': event,
                         'github.repository': 'groundsgg/plugin-notifications',
                         'inputs.runner': '',
-                        # Public repos land on GitHub's runners, private ones on their ARC set.
-                        'runner.environment': 'github-hosted' if visibility == 'public' else 'self-hosted',
                     }
                     active = [step for step in job['steps'] if resolve('${{ ' + step['if'] + ' }}' if 'if' in step else True, context) not in ['False', False]]
                     builders = [step for step in active if 'setup-buildx-action' in step.get('uses', '')]
@@ -64,26 +62,69 @@ class DockerWorkflowTest(unittest.TestCase):
                         options = step['with']
                         self.assertEqual(options['platforms'], 'linux/amd64')
                         self.assertIn('github_token=', options['secrets'])
-                        # The GHA layer cache downloads at tens of KB/s on ARC; hosted runners only.
-                        expected_from = 'type=gha,scope=groundsgg/plugin-notifications-amd64' if visibility == 'public' else ''
-                        self.assertEqual(resolve(options['cache-from'], context), expected_from)
+                        # Where the cache lives is decided at run time by "Resolve layer cache".
+                        self.assertEqual(options['cache-from'], '${{ steps.layer_cache.outputs.from }}')
                     pushes = [step for step in builds if step['with'].get('push') is True]
-                    cache_writes = [step for step in builds if resolve(step['with'].get('cache-to', ''), context)]
+                    cache_writes = [step for step in builds if step['with'].get('cache-to')]
                     if event == 'pull_request':
                         self.assertEqual(pushes, [])
                         self.assertEqual(cache_writes, [])
                         self.assertTrue(any(step['with'].get('load') for step in builds))
                     else:
                         self.assertEqual(len(pushes), 1)
-                        if visibility == 'public':
-                            self.assertEqual(len(cache_writes), 1)
-                            self.assertIn('mode=max', resolve(cache_writes[0]['with']['cache-to'], context))
-                        else:
-                            self.assertEqual(cache_writes, [], 'ARC builds must not export to the GHA cache')
+                        self.assertEqual(len(cache_writes), 1)
+                        self.assertEqual(cache_writes[0]['with']['cache-to'], '${{ steps.layer_cache.outputs.to }}')
                     expected_runner = 'ubuntu-24.04' if visibility == 'public' else 'plugin-notifications'
                     self.assertEqual(resolve(job['runs-on'], context).strip(), expected_runner)
                     expected_budget = 30 if visibility == 'public' else 60
                     self.assertEqual(int(resolve(job['timeout-minutes'], context)), expected_budget)
+
+    def run_layer_cache(self, **env):
+        """Run the "Resolve layer cache" script the way the runner would and return its outputs."""
+        import os
+        import subprocess
+        import tempfile
+        job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
+        script = next(step for step in job['steps'] if step.get('id') == 'layer_cache')['run']
+        with tempfile.NamedTemporaryFile('r', suffix='.out') as output:
+            base = {'PATH': os.environ['PATH'], 'GITHUB_OUTPUT': output.name,
+                    'GITHUB_REPOSITORY': 'groundsgg/plugin-match'}
+            subprocess.run(['bash', '-c', script], env={**base, **env}, check=True, capture_output=True)
+            text = output.read()
+        outputs, lines = {}, iter(text.splitlines())
+        for line in lines:
+            if '<<' in line:
+                key, marker = line.split('<<', 1)
+                body = []
+                for inner in lines:
+                    if inner == marker:
+                        break
+                    body.append(inner)
+                outputs[key] = '\n'.join(body).strip()
+            else:
+                key, _, value = line.partition('=')
+                outputs[key] = value
+        return outputs
+
+    def test_layer_cache_is_gha_on_hosted_runners(self):
+        out = self.run_layer_cache(RUNNER_ENVIRONMENT='github-hosted', BUILDKIT_CACHE_REGISTRY='ignored:5000')
+        self.assertEqual(out['from'], 'type=gha,scope=groundsgg/plugin-match-amd64')
+        self.assertEqual(out['to'], 'type=gha,scope=groundsgg/plugin-match-amd64,mode=max')
+        self.assertEqual(out['buildkitd-config'], '')
+
+    def test_layer_cache_uses_the_registry_a_self_hosted_runner_advertises(self):
+        registry = 'build-cache-registry.arc-runners.svc.cluster.local:5000'
+        out = self.run_layer_cache(RUNNER_ENVIRONMENT='self-hosted', BUILDKIT_CACHE_REGISTRY=registry)
+        ref = registry + '/cache/plugin-match:amd64'
+        self.assertEqual(out['from'], 'type=registry,ref=' + ref)
+        self.assertEqual(out['to'], 'type=registry,ref=' + ref + ',mode=max,ignore-error=true')
+        # BuildKit must be told the registry is plain HTTP, or every cache call fails TLS.
+        self.assertIn('[registry."' + registry + '"]', out['buildkitd-config'])
+        self.assertIn('http = true', out['buildkitd-config'])
+
+    def test_no_layer_cache_on_a_self_hosted_runner_without_a_registry(self):
+        out = self.run_layer_cache(RUNNER_ENVIRONMENT='self-hosted')
+        self.assertEqual((out['from'], out['to'], out['buildkitd-config']), ('', '', ''))
 
     def test_cold_arc_budget_preserves_hosted_override_and_fallback_limits(self):
         job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
