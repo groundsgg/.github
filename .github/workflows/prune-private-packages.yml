@@ -1,0 +1,93 @@
+name: Prune private container packages
+
+# Private GHCR packages are billed storage (public ones are free), and on
+# 2026-09-29 they filled the org quota: 24 private images held 2229 versions,
+# 1153 of them untagged, and uploads started failing with 402 Payment Required.
+#
+# What is kept, always:
+#   - release tags (1.2.3, v1.2.3, 1.2.3-rc.1 ...) and the moving tags
+#     latest / edge / main / stable
+#   - service-nats-authz:sha-52e7b59, pinned by grounds-pulumi scripts/nats-bootstrap
+#   - the newest KEEP_N other tags per image (sha-*, pr-* ...)
+#   - anything younger than 14 days
+#   - the platform manifests of every multi-arch image that is kept: they are
+#     untagged, and deleting them breaks the image. ghcr-cleanup-action
+#     resolves those references; a plain delete-package-versions would not.
+#
+# Deleting is off until the repository variable PACKAGES_CLEANUP_APPLY is
+# "true". Until then every run, scheduled or dispatched, is a dry run that only
+# logs what would go. A dispatch can still force a dry run with dry_run=true.
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Only log what would be deleted
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prune-private-packages
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-24.04
+    env:
+      # A classic PAT with read:packages and delete:packages. GITHUB_TOKEN can
+      # neither list nor delete packages that belong to other repositories.
+      GH_TOKEN: ${{ secrets.PACKAGES_CLEANUP_TOKEN }}
+    steps:
+      - name: Decide whether this run deletes
+        id: mode
+        env:
+          EVENT: ${{ github.event_name }}
+          INPUT_DRY_RUN: ${{ inputs.dry_run }}
+          APPLY: ${{ vars.PACKAGES_CLEANUP_APPLY }}
+        run: |
+          set -euo pipefail
+          dry=true
+          if [ "$APPLY" = "true" ]; then
+            if [ "$EVENT" = "schedule" ] || [ "$INPUT_DRY_RUN" = "false" ]; then
+              dry=false
+            fi
+          fi
+          echo "dry_run=$dry" >> "$GITHUB_OUTPUT"
+          echo "dry run: $dry"
+
+      - name: List private container packages
+        id: packages
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::PACKAGES_CLEANUP_TOKEN is not set"
+            exit 1
+          fi
+          # Private only: public packages cost nothing, and other people pull them.
+          list=$(gh api --paginate "orgs/${{ github.repository_owner }}/packages?package_type=container&visibility=private&per_page=100" \
+            -q '.[].name' | sort | paste -sd, -)
+          if [ -z "$list" ]; then
+            echo "::error::no private container packages found; is the token allowed to read them?"
+            exit 1
+          fi
+          echo "names=$list" >> "$GITHUB_OUTPUT"
+          echo "$list" | tr ',' '\n'
+
+      - name: Prune
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          token: ${{ secrets.PACKAGES_CLEANUP_TOKEN }}
+          owner: ${{ github.repository_owner }}
+          packages: ${{ steps.packages.outputs.names }}
+          use-regex: true
+          exclude-tags: '^v?[0-9]+\.[0-9]+\.[0-9]+.*$|^(latest|edge|main|stable)$|^sha-52e7b59$'
+          keep-n-tagged: 10
+          delete-untagged: true
+          older-than: 14 days
+          validate: true
+          dry-run: ${{ steps.mode.outputs.dry_run }}
