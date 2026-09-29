@@ -13,9 +13,11 @@ def resolve(value, context):
         return value
     def expression(match):
         source = match.group(1).strip()
-        source = re.sub(r'\b(?:github|inputs|steps|env)\.[\w.]+', lambda field: repr(context[field[0]]), source)
+        source = re.sub(r'\b(?:github|inputs|steps|env|runner)\.[\w.]+', lambda field: repr(context[field[0]]), source)
+        # GitHub's format('{0}', x); evaluated as Python's str.format.
+        source = re.sub(r'\bformat\(', 'str.format(', source)
         source = source.replace('&&', ' and ').replace('||', ' or ')
-        return str(eval('(' + source + ')', {'__builtins__': {}}, {}))
+        return str(eval('(' + source + ')', {'__builtins__': {}, 'str': str}, {}))
     return re.sub(r'\$\{\{(.*?)\}\}', expression, value, flags=re.DOTALL)
 
 
@@ -49,6 +51,8 @@ class DockerWorkflowTest(unittest.TestCase):
                         'github.event_name': event,
                         'github.repository': 'groundsgg/plugin-notifications',
                         'inputs.runner': '',
+                        # Public repos land on GitHub's runners, private ones on their ARC set.
+                        'runner.environment': 'github-hosted' if visibility == 'public' else 'self-hosted',
                     }
                     active = [step for step in job['steps'] if resolve('${{ ' + step['if'] + ' }}' if 'if' in step else True, context) not in ['False', False]]
                     builders = [step for step in active if 'setup-buildx-action' in step.get('uses', '')]
@@ -60,17 +64,22 @@ class DockerWorkflowTest(unittest.TestCase):
                         options = step['with']
                         self.assertEqual(options['platforms'], 'linux/amd64')
                         self.assertIn('github_token=', options['secrets'])
-                        self.assertEqual(resolve(options['cache-from'], context), 'type=gha,scope=groundsgg/plugin-notifications-amd64')
+                        # The GHA layer cache downloads at tens of KB/s on ARC; hosted runners only.
+                        expected_from = 'type=gha,scope=groundsgg/plugin-notifications-amd64' if visibility == 'public' else ''
+                        self.assertEqual(resolve(options['cache-from'], context), expected_from)
                     pushes = [step for step in builds if step['with'].get('push') is True]
-                    cache_writes = [step for step in builds if step['with'].get('cache-to')]
+                    cache_writes = [step for step in builds if resolve(step['with'].get('cache-to', ''), context)]
                     if event == 'pull_request':
                         self.assertEqual(pushes, [])
                         self.assertEqual(cache_writes, [])
                         self.assertTrue(any(step['with'].get('load') for step in builds))
                     else:
                         self.assertEqual(len(pushes), 1)
-                        self.assertEqual(len(cache_writes), 1)
-                        self.assertIn('mode=max', cache_writes[0]['with']['cache-to'])
+                        if visibility == 'public':
+                            self.assertEqual(len(cache_writes), 1)
+                            self.assertIn('mode=max', resolve(cache_writes[0]['with']['cache-to'], context))
+                        else:
+                            self.assertEqual(cache_writes, [], 'ARC builds must not export to the GHA cache')
                     expected_runner = 'ubuntu-24.04' if visibility == 'public' else 'plugin-notifications'
                     self.assertEqual(resolve(job['runs-on'], context).strip(), expected_runner)
                     expected_budget = 30 if visibility == 'public' else 60
