@@ -67,8 +67,10 @@ jobs:
           # Without this the `./gradlew -q properties` step below resolves the
           # whole dependency graph from scratch on every run — measured at ~98s
           # median in service-moderation, a third of the job, to read one
-          # version string.
-          cache: "gradle"
+          # version string. Hosted runners only: from the self-hosted ARC runners
+          # the GitHub Actions cache stalled at 0 bytes for minutes and crawled at
+          # ~1 MB/s (2026-09-30), slower than resolving from scratch.
+          cache: ${{ runner.environment == 'github-hosted' && 'gradle' || '' }}
 
       - name: Configure GitHub Packages credentials
         run: |
