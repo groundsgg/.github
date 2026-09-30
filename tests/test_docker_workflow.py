@@ -177,6 +177,23 @@ class DockerWorkflowTest(unittest.TestCase):
                     self.assertEqual(missing, 'ubuntu-24.04')
         self.assertEqual(checked, 9, 'every repo-routed job should target the shared pool')
 
+    def test_gradle_caches_are_used_on_hosted_runners_only(self):
+        """From hbr1 the GHA cache stalled at 0 bytes and crawled at ~1 MB/s (2026-09-30).
+
+        A literal `cache: gradle` would send every self-hosted job back through it, so each
+        Gradle job must gate setup-java's cache -- and setup-gradle's -- on the runner.
+        """
+        for name in ['gradle-ci.yml', 'gradle-publish.yml', 'docker-gradle-build-push.yml']:
+            job = next(iter(yaml.safe_load((WORKFLOW.parent / name).read_text())['jobs'].values()))
+            for step in job['steps']:
+                uses, with_ = step.get('uses', ''), step.get('with', {})
+                with self.subTest(workflow=name, step=uses):
+                    if uses.startswith('actions/setup-java'):
+                        self.assertIn('runner.environment', str(with_['cache']))
+                        self.assertNotEqual(with_['cache'], 'gradle')
+                    if uses.startswith('gradle/actions/setup-gradle'):
+                        self.assertIn('runner.environment', str(with_['cache-disabled']))
+
     def test_runner_override_and_missing_event_payload(self):
         job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
         context = {'inputs.runner': '', 'github.event.repository.visibility': '', 'github.event.repository.name': ''}

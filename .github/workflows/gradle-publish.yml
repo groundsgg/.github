@@ -57,10 +57,16 @@ jobs:
         with:
           distribution: "temurin"
           java-version: "25"
-          cache: "gradle"
+          # The GitHub Actions cache is a Azure-hosted download: from the self-hosted
+          # runners on hbr1 it stalled at 0 bytes for minutes and crawled at ~1 MB/s
+          # (2026-09-30), slower than resolving the dependencies from scratch. Hosted
+          # runners keep it; self-hosted ones use the Gradle build cache node.
+          cache: ${{ runner.environment == 'github-hosted' && 'gradle' || '' }}
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-disabled: ${{ runner.environment != 'github-hosted' }}
 
       - name: Configure GitHub Packages credentials for resolution
         run: |
