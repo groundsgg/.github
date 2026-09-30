@@ -52,22 +52,20 @@ jobs:
     # `if: github.event.issue.pull_request != null`, but we double-up
     # here because reusable workflows shouldn't trust their callers.
     if: github.event.issue.pull_request != null
-      # Self-hosted ARC runners on hbr1. The label is the calling repository's
-      # own name, which is how each repo reaches its own scale set without
-      # passing anything.
-      #
       # Read the three branches in order. A public repo keeps a GitHub-hosted
       # runner: on a self-hosted pool a fork PR would run arbitrary code on
-      # hbr1, which also hosts production containers. A private repo goes to
-      # its own runner. And if `repository` is missing from the event payload
-      # -- which is why this used to fall back to Blacksmith -- the name is
-      # empty and Blacksmith still catches it, because an empty label matches
-      # no runner at all and the job would queue until someone cancels it.
+      # hbr1, which also hosts production containers (the org's Default runner
+      # group refuses public repositories as a second line). A private repo goes
+      # to `grounds-runners`, the shared self-hosted ARC pool (org-level, on
+      # hbr1 today). And if `repository` is missing from the event payload, the
+      # job lands on hosted amd64 `ubuntu-24.04`, which exists for public and
+      # private repos alike -- hosted arm64 does not exist for private ones, and
+      # a label no runner matches queues until someone cancels the job.
     runs-on: >-
       ${{ (github.event.repository.visibility == 'public'
             && 'ubuntu-24.04-arm')
-          || github.event.repository.name
-          || 'blacksmith-2vcpu-ubuntu-2404-arm' }}
+          || (github.event.repository.name && 'grounds-runners')
+          || 'ubuntu-24.04' }}
     timeout-minutes: 10
     permissions:
       issues: write

@@ -74,7 +74,7 @@ class DockerWorkflowTest(unittest.TestCase):
                         self.assertEqual(len(pushes), 1)
                         self.assertEqual(len(cache_writes), 1)
                         self.assertEqual(cache_writes[0]['with']['cache-to'], '${{ steps.layer_cache.outputs.to }}')
-                    expected_runner = 'ubuntu-24.04' if visibility == 'public' else 'plugin-notifications'
+                    expected_runner = 'ubuntu-24.04' if visibility == 'public' else 'grounds-runners'
                     self.assertEqual(resolve(job['runs-on'], context).strip(), expected_runner)
                     expected_budget = 30 if visibility == 'public' else 60
                     self.assertEqual(int(resolve(job['timeout-minutes'], context)), expected_budget)
@@ -148,6 +148,34 @@ class DockerWorkflowTest(unittest.TestCase):
                 budget = int(resolve(job['timeout-minutes'], context))
                 self.assertEqual(budget, expected)
                 self.assertLessEqual(budget, 60)
+
+    def test_every_central_workflow_routes_private_repos_to_the_shared_pool(self):
+        """Public -> GitHub-hosted, private -> grounds-runners, no payload -> hosted amd64.
+
+        The last case matters: hosted arm64 does not exist for private repos, and a
+        public repo sent to the self-hosted pool is refused by the org's runner group,
+        so either wrong guess queues a job forever.
+        """
+        checked = 0
+        for path in sorted(WORKFLOW.parent.glob('*.yml')):
+            jobs = (yaml.safe_load(path.read_text()) or {}).get('jobs', {})
+            for name, job in jobs.items():
+                runs_on = job.get('runs-on')
+                if not isinstance(runs_on, str) or 'grounds-runners' not in runs_on:
+                    continue
+                checked += 1
+                base = {'inputs.runner': ''}
+                with self.subTest(workflow=path.name, job=name):
+                    private = resolve(runs_on, {**base, 'github.event.repository.visibility': 'private',
+                                                'github.event.repository.name': 'plugin-match'}).strip()
+                    self.assertEqual(private, 'grounds-runners')
+                    public = resolve(runs_on, {**base, 'github.event.repository.visibility': 'public',
+                                               'github.event.repository.name': 'service-maps'}).strip()
+                    self.assertTrue(public.startswith('ubuntu-24.04'), public)
+                    missing = resolve(runs_on, {**base, 'github.event.repository.visibility': '',
+                                                'github.event.repository.name': ''}).strip()
+                    self.assertEqual(missing, 'ubuntu-24.04')
+        self.assertEqual(checked, 9, 'every repo-routed job should target the shared pool')
 
     def test_runner_override_and_missing_event_payload(self):
         job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']

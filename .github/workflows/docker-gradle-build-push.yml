@@ -36,13 +36,14 @@ jobs:
     # happened to grounds-forge 4.3.0 in its migrate init container. Building
     # an amd64 image on an arm64 runner would mean QEMU for the whole build.
     # Public fork PRs remain on GitHub-hosted runners; private repositories
-    # use their own ARC scale set. Missing repository payloads safely fall
-    # back to GitHub-hosted rather than the unavailable Blacksmith pool.
+    # use the shared self-hosted pool `grounds-runners` (org-level ARC; the
+    # org's Default runner group refuses public repositories). Missing
+    # repository payloads safely fall back to GitHub-hosted.
     runs-on: >-
       ${{ inputs.runner != '' && inputs.runner
           || (github.event.repository.visibility == 'public'
               && 'ubuntu-24.04')
-          || github.event.repository.name
+          || (github.event.repository.name && 'grounds-runners')
           || 'ubuntu-24.04' }}
     # Cold ARC builds can exceed 30m downloading builder/runtime base images
     # even after Gradle succeeds. Keep the default repo-ARC path bounded at
