@@ -155,6 +155,19 @@ jobs:
       # major tag — `@v4` resolves to nothing and fails the job outright with
       # "Unable to resolve action ... unable to find version `v4`". Do not
       # shorten this to match its neighbours.
+      - name: Install Cosign installer prerequisite
+        shell: bash
+        run: |
+          if ! command -v envsubst >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update
+              apt-get install -y --no-install-recommends gettext-base
+            else
+              sudo apt-get update
+              sudo apt-get install -y --no-install-recommends gettext-base
+            fi
+          fi
+
       - uses: sigstore/cosign-installer@v4.1.2
         with:
           cosign-release: v2.4.3
