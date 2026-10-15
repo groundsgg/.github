@@ -5,8 +5,10 @@ name: Prune private container packages
 # 1153 of them untagged, and uploads started failing with 402 Payment Required.
 #
 # What is kept, always:
-#   - release tags (1.2.3, v1.2.3, 1.2.3-rc.1 ...) and the moving tags
-#     latest / edge / main / stable
+#   - the moving tags latest / edge / main / stable
+#   - the newest 10 release tags per image (1.2.3, v1.2.3,
+#     1.2.3-rc.1 ...). Keeping every release let grounds-forge alone grow to
+#     ~48 GB (232 releases, ~200 MB of new layers each) by 2026-10-15.
 #   - service-nats-authz:sha-52e7b59, pinned by grounds-pulumi scripts/nats-bootstrap
 #   - the newest KEEP_N other tags per image (sha-*, pr-* ...)
 #   - anything younger than 14 days
@@ -88,6 +90,24 @@ jobs:
           exclude-tags: '^v?[0-9]+\.[0-9]+\.[0-9]+.*$|^(latest|edge|main|stable)$|^sha-52e7b59$'
           keep-n-tagged: 10
           delete-untagged: true
+          older-than: 14 days
+          validate: true
+          dry-run: ${{ steps.mode.outputs.dry_run }}
+
+      - name: Prune old releases
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          token: ${{ secrets.PACKAGES_CLEANUP_TOKEN }}
+          owner: ${{ github.repository_owner }}
+          packages: ${{ steps.packages.outputs.names }}
+          use-regex: true
+          # Only release tags are candidates here; a release that also carries a
+          # moving tag stays. Their cosign .sig images go with them, and
+          # delete-orphaned-images picks up the ones earlier runs stranded.
+          delete-tags: '^v?[0-9]+\.[0-9]+\.[0-9]+.*$'
+          exclude-tags: '^(latest|edge|main|stable)$|^sha-52e7b59$'
+          keep-n-tagged: 10
+          delete-orphaned-images: true
           older-than: 14 days
           validate: true
           dry-run: ${{ steps.mode.outputs.dry_run }}
