@@ -17,7 +17,7 @@ jobs:
       # Read the three branches in order. A public repo keeps a GitHub-hosted
       # runner: on a self-hosted runner a fork PR would run arbitrary code on
       # our own infrastructure. A private repo goes to RunsOn, an ephemeral
-      # m8a spot instance in our AWS account (eu-central-1), sized per job in
+      # spot instance (m8a, m7a or m8i) in our AWS account (eu-central-1), sized per job in
       # the label. And if `repository` is missing from the event payload, the
       # job lands on hosted amd64 `ubuntu-24.04`, which exists for public and
       # private repos alike -- hosted arm64 does not exist for private ones, and
@@ -26,7 +26,7 @@ jobs:
       ${{ (github.event.repository.visibility == 'public'
             && 'ubuntu-24.04-arm')
           || (github.event.repository.name
-              && format('runs-on={0}/cpu=2/ram=8/family=m8a/image=ubuntu24-full-x64', github.run_id))
+              && format('runs-on={0}/cpu=2/ram=8/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64', github.run_id))
           || 'ubuntu-24.04' }}
     timeout-minutes: 10
     steps:

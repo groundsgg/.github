@@ -36,7 +36,7 @@ jobs:
     # happened to grounds-forge 4.3.0 in its migrate init container. Building
     # an amd64 image on an arm64 runner would mean QEMU for the whole build.
     # Public fork PRs remain on GitHub-hosted runners; private repositories
-    # use RunsOn, an ephemeral m8a.xlarge spot instance in our AWS account
+    # use RunsOn, an ephemeral 4 vCPU / 16 GB spot instance in our AWS account
     # (eu-central-1). Missing
     # repository payloads safely fall back to GitHub-hosted.
     runs-on: >-
@@ -44,7 +44,7 @@ jobs:
           || (github.event.repository.visibility == 'public'
               && 'ubuntu-24.04')
           || (github.event.repository.name
-              && format('runs-on={0}/cpu=4/ram=16/family=m8a/image=ubuntu24-full-x64/extras=s3-cache', github.run_id))
+              && format('runs-on={0}/cpu=4/ram=16/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64/extras=s3-cache', github.run_id))
           || 'ubuntu-24.04' }}
     # Cold ARC builds can exceed 30m downloading builder/runtime base images
     # even after Gradle succeeds. Keep the default repo-ARC path bounded at
