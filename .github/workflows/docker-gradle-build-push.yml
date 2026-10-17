@@ -36,14 +36,15 @@ jobs:
     # happened to grounds-forge 4.3.0 in its migrate init container. Building
     # an amd64 image on an arm64 runner would mean QEMU for the whole build.
     # Public fork PRs remain on GitHub-hosted runners; private repositories
-    # use the shared self-hosted pool `grounds-runners` (org-level ARC; the
-    # org's Default runner group refuses public repositories). Missing
+    # use RunsOn, an ephemeral m8a.xlarge spot instance in our AWS account
+    # (eu-central-1). Missing
     # repository payloads safely fall back to GitHub-hosted.
     runs-on: >-
       ${{ inputs.runner != '' && inputs.runner
           || (github.event.repository.visibility == 'public'
               && 'ubuntu-24.04')
-          || (github.event.repository.name && 'grounds-runners')
+          || (github.event.repository.name
+              && format('runs-on={0}/cpu=4/ram=16/family=m8a/image=ubuntu24-full-x64/extras=s3-cache', github.run_id))
           || 'ubuntu-24.04' }}
     # Cold ARC builds can exceed 30m downloading builder/runtime base images
     # even after Gradle succeeds. Keep the default repo-ARC path bounded at
@@ -55,13 +56,12 @@ jobs:
           && 60 || 30 }}
     env:
       TAG_TYPE: ${{ github.ref_type == 'tag' && 'release' || 'edge' }}
-      RUNS_ON: ${{ startsWith(inputs.runner, 'runs-on=') }}
     steps:
       # RunsOn (AWS) runners: routes the Actions cache, and with it the Buildx
       # `type=gha` layer cache, to RunsOn's S3-backed Magic Cache. Needs
       # `extras=s3-cache` in the runner label.
       - name: Enable RunsOn Magic Cache
-        if: env.RUNS_ON == 'true'
+        if: startsWith(runner.name, 'runs-on--')
         uses: runs-on/action@v2
 
       - name: Checkout
@@ -79,7 +79,7 @@ jobs:
           # the GitHub Actions cache stalled at 0 bytes for minutes and crawled at
           # ~1 MB/s (2026-09-30), slower than resolving from scratch. RunsOn runners
           # use it through the Magic Cache.
-          cache: ${{ (runner.environment == 'github-hosted' || env.RUNS_ON == 'true') && 'gradle' || '' }}
+          cache: ${{ (runner.environment == 'github-hosted' || startsWith(runner.name, 'runs-on--')) && 'gradle' || '' }}
 
       - name: Configure GitHub Packages credentials
         run: |
@@ -133,7 +133,7 @@ jobs:
           set -euo pipefail
           repo="${GITHUB_REPOSITORY#*/}"
           from=""; to=""; config=""
-          if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ] || [ "${RUNS_ON}" = "true" ]; then
+          if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ] || [[ "${RUNNER_NAME:-}" == runs-on--* ]]; then
             from="type=gha,scope=${GITHUB_REPOSITORY}-amd64"
             to="type=gha,scope=${GITHUB_REPOSITORY}-amd64,mode=max"
           elif [ -n "${BUILDKIT_CACHE_REGISTRY:-}" ]; then
