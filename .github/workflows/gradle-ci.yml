@@ -69,7 +69,7 @@ jobs:
           cache-disabled: ${{ runner.environment != 'github-hosted' }}
 
       - name: Use the Maven mirror
-        uses: groundsgg/.github/.github/actions/maven-mirror@feat/maven-mirror
+        uses: groundsgg/.github/.github/actions/maven-mirror@main
 
       - name: Configure GitHub Packages credentials
         run: |

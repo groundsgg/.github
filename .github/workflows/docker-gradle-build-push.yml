@@ -86,7 +86,7 @@ jobs:
       #   --mount=type=secret,id=gradle_init,target=/root/.gradle/init.d/grounds-maven-mirror.init.gradle.kts,required=false
       - name: Use the Maven mirror
         id: mirror
-        uses: groundsgg/.github/.github/actions/maven-mirror@feat/maven-mirror
+        uses: groundsgg/.github/.github/actions/maven-mirror@main
 
       - name: Read Gradle project version
         id: gradle_version
