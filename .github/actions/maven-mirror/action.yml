@@ -1,0 +1,42 @@
+name: Maven mirror
+description: >
+  Points Gradle at the runners' Maven mirror (Maven Central, the Gradle Plugin
+  Portal and PaperMC) by installing a Gradle init script. Uses the runner's
+  MAVEN_MIRROR_URL, which only the self-hosted runners set. Without it, or when
+  the mirror does not answer, the action warns and changes nothing, so Gradle
+  resolves from upstream exactly as before.
+
+outputs:
+  init-script:
+    description: >
+      Path of the installed init script, empty when the mirror is not used.
+      Pass it to Docker builds as the BuildKit secret `gradle_init`.
+    value: ${{ steps.install.outputs.init-script }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install Maven mirror init script
+      id: install
+      shell: bash
+      env:
+        TEMPLATE: ${{ github.action_path }}/grounds-maven-mirror.init.gradle.kts
+      run: |
+        set -euo pipefail
+        url="${MAVEN_MIRROR_URL:-}"
+        url="${url%/}"
+        if [ -z "$url" ]; then
+          echo "::warning::MAVEN_MIRROR_URL is not set on this runner, resolving from upstream"
+          exit 0
+        fi
+        probe="$url/releases/org/jetbrains/kotlin/kotlin-stdlib/maven-metadata.xml"
+        status="$(curl -s -o /dev/null -m 3 -w '%{http_code}' "$probe" || true)"
+        if [ "$status" != "200" ]; then
+          echo "::warning::Maven mirror $url unreachable (HTTP ${status:-none}), resolving from upstream"
+          exit 0
+        fi
+        script="$HOME/.gradle/init.d/grounds-maven-mirror.init.gradle.kts"
+        mkdir -p "$(dirname "$script")"
+        sed "s|@MIRROR_URL@|$url|" "$TEMPLATE" > "$script"
+        echo "init-script=$script" >> "$GITHUB_OUTPUT"
+        echo "Using Maven mirror $url"
