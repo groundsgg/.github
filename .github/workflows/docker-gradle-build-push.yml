@@ -55,7 +55,15 @@ jobs:
           && 60 || 30 }}
     env:
       TAG_TYPE: ${{ github.ref_type == 'tag' && 'release' || 'edge' }}
+      RUNS_ON: ${{ startsWith(inputs.runner, 'runs-on=') }}
     steps:
+      # RunsOn (AWS) runners: routes the Actions cache, and with it the Buildx
+      # `type=gha` layer cache, to RunsOn's S3-backed Magic Cache. Needs
+      # `extras=s3-cache` in the runner label.
+      - name: Enable RunsOn Magic Cache
+        if: env.RUNS_ON == 'true'
+        uses: runs-on/action@v2
+
       - name: Checkout
         uses: actions/checkout@v7
 
@@ -69,8 +77,9 @@ jobs:
           # median in service-moderation, a third of the job, to read one
           # version string. Hosted runners only: from the self-hosted ARC runners
           # the GitHub Actions cache stalled at 0 bytes for minutes and crawled at
-          # ~1 MB/s (2026-09-30), slower than resolving from scratch.
-          cache: ${{ runner.environment == 'github-hosted' && 'gradle' || '' }}
+          # ~1 MB/s (2026-09-30), slower than resolving from scratch. RunsOn runners
+          # use it through the Magic Cache.
+          cache: ${{ (runner.environment == 'github-hosted' || env.RUNS_ON == 'true') && 'gradle' || '' }}
 
       - name: Configure GitHub Packages credentials
         run: |
@@ -108,7 +117,8 @@ jobs:
           echo "DOCKER_CONFIG=${docker_config}" >> "$GITHUB_ENV"
 
       # Where BuildKit keeps its layer cache, decided on the runner:
-      #   - GitHub-hosted: the repository-scoped GHA cache.
+      #   - GitHub-hosted, or RunsOn with its Magic Cache: the repository-scoped
+      #     GHA cache.
       #   - self-hosted with BUILDKIT_CACHE_REGISTRY: that registry. The hbr1 ARC
       #     runners advertise one next to them (plain HTTP, cluster-internal),
       #     the same way they advertise GRADLE_BUILD_CACHE_URL. The GHA cache is
@@ -123,7 +133,7 @@ jobs:
           set -euo pipefail
           repo="${GITHUB_REPOSITORY#*/}"
           from=""; to=""; config=""
-          if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
+          if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ] || [ "${RUNS_ON}" = "true" ]; then
             from="type=gha,scope=${GITHUB_REPOSITORY}-amd64"
             to="type=gha,scope=${GITHUB_REPOSITORY}-amd64,mode=max"
           elif [ -n "${BUILDKIT_CACHE_REGISTRY:-}" ]; then

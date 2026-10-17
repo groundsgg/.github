@@ -49,6 +49,12 @@ jobs:
           || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
+      # RunsOn (AWS) runners: routes the Actions cache to RunsOn's S3-backed
+      # Magic Cache. Needs `extras=s3-cache` in the runner label.
+      - name: Enable RunsOn Magic Cache
+        if: startsWith(inputs.runner, 'runs-on=')
+        uses: runs-on/action@v2
+
       - name: Check out
         uses: actions/checkout@v7
 
@@ -61,12 +67,13 @@ jobs:
           # runners on hbr1 it stalled at 0 bytes for minutes and crawled at ~1 MB/s
           # (2026-09-30), slower than resolving the dependencies from scratch. Hosted
           # runners keep it; self-hosted ones use the Gradle build cache node.
-          cache: ${{ runner.environment == 'github-hosted' && 'gradle' || '' }}
+          # RunsOn runners use the Actions cache through the Magic Cache.
+          cache: ${{ (runner.environment == 'github-hosted' || startsWith(inputs.runner, 'runs-on=')) && 'gradle' || '' }}
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          cache-disabled: ${{ runner.environment != 'github-hosted' }}
+          cache-disabled: ${{ runner.environment != 'github-hosted' && !startsWith(inputs.runner, 'runs-on=') }}
 
       - name: Use the Maven mirror
         uses: groundsgg/.github/.github/actions/maven-mirror@main
