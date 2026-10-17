@@ -7,10 +7,10 @@ on:
         description: >
           Runner label. Leave unset and the job picks one by repository
           visibility: GitHub's arm64 hosted runner in public repos, where it
-          is free and has 4 vCPUs, and the shared self-hosted `grounds-runners`
-          pool (amd64) in private repos, where GitHub-hosted arm64 is not
-          offered. Set it explicitly to override, e.g. `grounds-runners-large`
-          for a build that needs more memory than the shared pool gives.
+          is free and has 4 vCPUs, and a RunsOn spot instance (amd64, 4 vCPU,
+          16 GB) in private repos, where GitHub-hosted arm64 is not offered.
+          Set it explicitly to override, e.g. a RunsOn label with
+          `cpu=8/ram=32` for a build that needs more memory.
         required: false
         type: string
         default: ""
@@ -33,11 +33,10 @@ concurrency:
 jobs:
   build:
       # Read the three branches in order. A public repo keeps a GitHub-hosted
-      # runner: on a self-hosted pool a fork PR would run arbitrary code on
-      # hbr1, which also hosts production containers (the org's Default runner
-      # group refuses public repositories as a second line). A private repo goes
-      # to `grounds-runners`, the shared self-hosted ARC pool (org-level, on
-      # hbr1 today). And if `repository` is missing from the event payload, the
+      # runner: on a self-hosted runner a fork PR would run arbitrary code on
+      # our own infrastructure. A private repo goes to RunsOn, an ephemeral
+      # spot instance (m8a, m7a or m8i) in our AWS account (eu-central-1), sized per job in
+      # the label. And if `repository` is missing from the event payload, the
       # job lands on hosted amd64 `ubuntu-24.04`, which exists for public and
       # private repos alike -- hosted arm64 does not exist for private ones, and
       # a label no runner matches queues until someone cancels the job.
@@ -45,10 +44,17 @@ jobs:
       ${{ inputs.runner != '' && inputs.runner
           || (github.event.repository.visibility == 'public'
               && 'ubuntu-24.04-arm')
-          || (github.event.repository.name && 'grounds-runners')
+          || (github.event.repository.name
+              && format('runs-on={0}/cpu=4/ram=16/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64/extras=s3-cache', github.run_id))
           || 'ubuntu-24.04' }}
     timeout-minutes: 30
     steps:
+      # RunsOn (AWS) runners: routes the Actions cache to RunsOn's S3-backed
+      # Magic Cache. Needs `extras=s3-cache` in the runner label.
+      - name: Enable RunsOn Magic Cache
+        if: startsWith(runner.name, 'runs-on--')
+        uses: runs-on/action@v2
+
       - name: Check out
         uses: actions/checkout@v7
 
@@ -60,13 +66,14 @@ jobs:
           # The GitHub Actions cache is a Azure-hosted download: from the self-hosted
           # runners on hbr1 it stalled at 0 bytes for minutes and crawled at ~1 MB/s
           # (2026-09-30), slower than resolving the dependencies from scratch. Hosted
-          # runners keep it; self-hosted ones use the Gradle build cache node.
-          cache: ${{ runner.environment == 'github-hosted' && 'gradle' || '' }}
+          # runners keep it; other self-hosted ones use the Gradle build cache node.
+          # RunsOn runners use the Actions cache through the Magic Cache.
+          cache: ${{ (runner.environment == 'github-hosted' || startsWith(runner.name, 'runs-on--')) && 'gradle' || '' }}
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          cache-disabled: ${{ runner.environment != 'github-hosted' }}
+          cache-disabled: ${{ runner.environment != 'github-hosted' && !startsWith(runner.name, 'runs-on--') }}
 
       - name: Use the Maven mirror
         uses: groundsgg/.github/.github/actions/maven-mirror@main
