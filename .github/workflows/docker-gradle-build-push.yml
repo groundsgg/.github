@@ -80,6 +80,14 @@ jobs:
             echo "github.token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}"
           } > ~/.gradle/gradle.properties
 
+      # Installs the init script on the runner, for the `./gradlew -q properties`
+      # below, and hands the same file to the image builds as the BuildKit secret
+      # `gradle_init`. A Dockerfile opts in by mounting it on its Gradle RUN:
+      #   --mount=type=secret,id=gradle_init,target=/root/.gradle/init.d/grounds-maven-mirror.init.gradle.kts,required=false
+      - name: Use the Maven mirror
+        id: mirror
+        uses: groundsgg/.github/.github/actions/maven-mirror@feat/maven-mirror
+
       - name: Read Gradle project version
         id: gradle_version
         run: |
@@ -186,6 +194,7 @@ jobs:
             GITHUB_USER=${{ github.actor }}
           secrets: |
             github_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          secret-files: ${{ steps.mirror.outputs.init-script && format('gradle_init={0}', steps.mirror.outputs.init-script) || '' }}
 
       - name: Build and push image
         if: github.event_name != 'pull_request'
@@ -203,6 +212,7 @@ jobs:
             GITHUB_USER=${{ github.actor }}
           secrets: |
             github_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+          secret-files: ${{ steps.mirror.outputs.init-script && format('gradle_init={0}', steps.mirror.outputs.init-script) || '' }}
 
       - name: Generate SBOM
         if: github.event_name != 'pull_request'

@@ -68,6 +68,9 @@ jobs:
         with:
           cache-disabled: ${{ runner.environment != 'github-hosted' }}
 
+      - name: Use the Maven mirror
+        uses: groundsgg/.github/.github/actions/maven-mirror@feat/maven-mirror
+
       - name: Configure GitHub Packages credentials
         run: |
           mkdir -p ~/.gradle
