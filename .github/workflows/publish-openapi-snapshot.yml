@@ -44,8 +44,17 @@ jobs:
     if: github.repository_owner == 'groundsgg'
     # Was arc-linux. The self-hosted ARC scale sets were decommissioned, so
     # nothing serves that label any more and jobs would queue until timeout.
-    # This job is Node-only, so a GitHub-hosted runner covers it.
-    runs-on: ubuntu-24.04
+    # This job is Node-only. A public caller keeps the free GitHub-hosted
+    # runner; a private caller goes to the smallest RunsOn instance, because
+    # this job runs in the caller's context and hosted minutes there count
+    # against the org's Actions budget. Same fallback as the other reusable
+    # workflows when `repository` is missing from the event payload.
+    runs-on: >-
+      ${{ (github.event.repository.visibility == 'public'
+            && 'ubuntu-24.04')
+          || (github.event.repository.name
+              && format('runs-on={0}/cpu=2/ram=8/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64', github.run_id))
+          || 'ubuntu-24.04' }}
     timeout-minutes: 20
     steps:
       - name: Download OpenAPI artifact
