@@ -56,6 +56,13 @@ jobs:
           && 60 || 30 }}
     env:
       TAG_TYPE: ${{ github.ref_type == 'tag' && 'release' || 'edge' }}
+      # No workflow artifacts from this job. Artifact storage is metered for
+      # private repositories, and once the org's Actions budget is spent every
+      # upload fails, which turned runs red after the image was already pushed
+      # (game-survivalgames, 2026-10-19). The build summary stays; only the
+      # build record upload is off. The SBOM travels with the image instead,
+      # as a BuildKit attestation (`sbom: true` below).
+      DOCKER_BUILD_RECORD_UPLOAD: false
     steps:
       # RunsOn (AWS) runners: routes the Actions cache, and with it the Buildx
       # `type=gha` layer cache, to RunsOn's S3-backed Magic Cache. Needs
@@ -218,25 +225,13 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: ${{ steps.layer_cache.outputs.from }}
           cache-to: ${{ steps.layer_cache.outputs.to }}
+          # SPDX SBOM as an attestation next to the provenance one, stored in
+          # GHCR with the image: `docker buildx imagetools inspect <image>
+          # --format '{{ json .SBOM }}'`. Replaces the separate syft scan whose
+          # workflow artifact upload failed whenever artifact storage was out.
+          sbom: true
           build-args: |
             GITHUB_USER=${{ github.actor }}
           secrets: |
             github_token=${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
           secret-files: ${{ steps.mirror.outputs.init-script && format('gradle_init={0}', steps.mirror.outputs.init-script) || '' }}
-
-      - name: Generate SBOM
-        if: github.event_name != 'pull_request'
-        uses: anchore/sbom-action@v0
-        with:
-          image: ${{ fromJSON(steps.meta.outputs.json).tags[0] }}
-          format: spdx-json
-          output-file: sbom.spdx.json
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload SBOM
-        if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@v7
-        with:
-          name: sbom-${{ env.TAG_TYPE }}
-          path: sbom.spdx.json
-          retention-days: 30
