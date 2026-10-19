@@ -93,6 +93,10 @@ jobs:
     timeout-minutes: 30
     outputs:
       image-tag: ${{ steps.tag.outputs.value }}
+    # No build record artifact: artifact storage is metered for private
+    # repositories and uploads fail once the org's Actions budget is spent.
+    env:
+      DOCKER_BUILD_RECORD_UPLOAD: false
     permissions:
       contents: read
       packages: write

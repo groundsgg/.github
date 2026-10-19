@@ -17,7 +17,9 @@ def resolve(value, context):
         # GitHub's format('{0}', x); evaluated as Python's str.format.
         source = re.sub(r'\bformat\(', 'str.format(', source)
         source = source.replace('&&', ' and ').replace('||', ' or ')
-        return str(eval('(' + source + ')', {'__builtins__': {}, 'str': str}, {}))
+        source = re.sub(r'\bstartsWith\(', 'starts_with(', source)
+        starts_with = lambda text, prefix: str(text).startswith(prefix)
+        return str(eval('(' + source + ')', {'__builtins__': {}, 'str': str, 'starts_with': starts_with}, {}))
     return re.sub(r'\$\{\{(.*?)\}\}', expression, value, flags=re.DOTALL)
 
 
@@ -40,6 +42,19 @@ class DockerWorkflowTest(unittest.TestCase):
         self.assertIn('steps.build.outputs.digest', signing['run'])
         self.assertEqual(build['if'], "github.event.action != 'closed'")
 
+    def test_image_builds_upload_no_workflow_artifacts(self):
+        """Artifact storage runs out with the Actions budget; a pushed image must not fail on it."""
+        for name, job_name in [('docker-gradle-build-push.yml', 'docker-build-push'), ('platform-test-preview.yml', 'build')]:
+            with self.subTest(workflow=name):
+                job = yaml.safe_load((WORKFLOW.parent / name).read_text())['jobs'][job_name]
+                self.assertIs(job['env']['DOCKER_BUILD_RECORD_UPLOAD'], False)
+                for step in job['steps']:
+                    self.assertNotIn('upload-artifact', step.get('uses', ''))
+                    self.assertNotIn('sbom-action', step.get('uses', ''))
+        job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
+        push = next(step for step in job['steps'] if step.get('name') == 'Build and push image')
+        self.assertIs(push['with']['sbom'], True)
+
     def test_build_and_cache_contract_for_public_and_private_events(self):
         job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
         for visibility in ['public', 'private']:
@@ -50,7 +65,10 @@ class DockerWorkflowTest(unittest.TestCase):
                         'github.event.repository.name': 'plugin-notifications',
                         'github.event_name': event,
                         'github.repository': 'groundsgg/plugin-notifications',
+                        'github.run_id': 42,
                         'inputs.runner': '',
+                        'runner.name': 'runs-on--i-0abc' if visibility == 'private' else 'GitHub Actions 7',
+                        'runner.environment': 'self-hosted' if visibility == 'private' else 'github-hosted',
                     }
                     active = [step for step in job['steps'] if resolve('${{ ' + step['if'] + ' }}' if 'if' in step else True, context) not in ['False', False]]
                     builders = [step for step in active if 'setup-buildx-action' in step.get('uses', '')]
@@ -74,8 +92,11 @@ class DockerWorkflowTest(unittest.TestCase):
                         self.assertEqual(len(pushes), 1)
                         self.assertEqual(len(cache_writes), 1)
                         self.assertEqual(cache_writes[0]['with']['cache-to'], '${{ steps.layer_cache.outputs.to }}')
-                    expected_runner = 'ubuntu-24.04' if visibility == 'public' else 'grounds-runners'
-                    self.assertEqual(resolve(job['runs-on'], context).strip(), expected_runner)
+                    runner = resolve(job['runs-on'], context).strip()
+                    if visibility == 'public':
+                        self.assertEqual(runner, 'ubuntu-24.04')
+                    else:
+                        self.assertTrue(runner.startswith('runs-on=42/'), runner)
                     expected_budget = 30 if visibility == 'public' else 60
                     self.assertEqual(int(resolve(job['timeout-minutes'], context)), expected_budget)
 
@@ -161,21 +182,21 @@ class DockerWorkflowTest(unittest.TestCase):
             jobs = (yaml.safe_load(path.read_text()) or {}).get('jobs', {})
             for name, job in jobs.items():
                 runs_on = job.get('runs-on')
-                if not isinstance(runs_on, str) or 'grounds-runners' not in runs_on:
+                if not isinstance(runs_on, str) or 'runs-on=' not in runs_on:
                     continue
                 checked += 1
-                base = {'inputs.runner': ''}
+                base = {'inputs.runner': '', 'github.run_id': 42}
                 with self.subTest(workflow=path.name, job=name):
                     private = resolve(runs_on, {**base, 'github.event.repository.visibility': 'private',
                                                 'github.event.repository.name': 'plugin-match'}).strip()
-                    self.assertEqual(private, 'grounds-runners')
+                    self.assertTrue(private.startswith('runs-on=42/'), private)
                     public = resolve(runs_on, {**base, 'github.event.repository.visibility': 'public',
                                                'github.event.repository.name': 'service-maps'}).strip()
                     self.assertTrue(public.startswith('ubuntu-24.04'), public)
                     missing = resolve(runs_on, {**base, 'github.event.repository.visibility': '',
                                                 'github.event.repository.name': ''}).strip()
                     self.assertEqual(missing, 'ubuntu-24.04')
-        self.assertEqual(checked, 9, 'every repo-routed job should target the shared pool')
+        self.assertEqual(checked, 10, 'every repo-routed job should target RunsOn')
 
     def test_gradle_caches_are_used_on_hosted_runners_only(self):
         """From hbr1 the GHA cache stalled at 0 bytes and crawled at ~1 MB/s (2026-09-30).
@@ -196,7 +217,8 @@ class DockerWorkflowTest(unittest.TestCase):
 
     def test_runner_override_and_missing_event_payload(self):
         job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
-        context = {'inputs.runner': '', 'github.event.repository.visibility': '', 'github.event.repository.name': ''}
+        context = {'inputs.runner': '', 'github.event.repository.visibility': '', 'github.event.repository.name': '',
+                   'github.run_id': 42}
         self.assertEqual(resolve(job['runs-on'], context), 'ubuntu-24.04')
         context['inputs.runner'] = 'custom-amd64'
         self.assertEqual(resolve(job['runs-on'], context), 'custom-amd64')
