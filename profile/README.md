@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://grounds.gg">
-    <img src="https://raw.githubusercontent.com/groundsgg/.github/main/profile/assets/grounds-logo-full.webp" alt="Grounds" width="600" />
+    <img src="https://raw.githubusercontent.com/groundsgg/.github/main/profile/assets/grounds-logo-with-stones.webp" alt="Grounds" width="600" />
   </a>
 </p>
 
