@@ -36,3 +36,7 @@ This organization brings together the games and the platform that supports them:
 We're building the player experience and its tools together, so the technology serves the worlds and games we want to create.
 
 Explore the repositories, [read the developer docs](https://docs.grounds.gg/build), or [say hello](mailto:hi@grounds.gg).
+
+### AI assistance
+
+Parts of our code, documentation, and other content are created with the help of AI tools. The Grounds team remains responsible for what we build and publish.
