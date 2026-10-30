@@ -37,14 +37,14 @@ jobs:
     # an amd64 image on an arm64 runner would mean QEMU for the whole build.
     # Public fork PRs remain on GitHub-hosted runners; private repositories
     # use RunsOn, an ephemeral 4 vCPU / 16 GB spot instance in our AWS account
-    # (eu-central-1). Missing
+    # (eu-central-1), with a sticky disk for the BuildKit state. Missing
     # repository payloads safely fall back to GitHub-hosted.
     runs-on: >-
       ${{ inputs.runner != '' && inputs.runner
           || (github.event.repository.visibility == 'public'
               && 'ubuntu-24.04')
           || (github.event.repository.name
-              && format('runs-on={0}/cpu=4/ram=16/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64/extras=s3-cache', github.run_id))
+              && format('runs-on={0}/cpu=4/ram=16/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64/extras=s3-cache/sticky=docker:30gb', github.run_id))
           || 'ubuntu-24.04' }}
     # Cold ARC builds can exceed 30m downloading builder/runtime base images
     # even after Gradle succeeds. Keep the default repo-ARC path bounded at
@@ -67,9 +67,19 @@ jobs:
       # RunsOn (AWS) runners: routes the Actions cache, and with it the Buildx
       # `type=gha` layer cache, to RunsOn's S3-backed Magic Cache. Needs
       # `extras=s3-cache` in the runner label.
+      #
+      # With the default label it also puts the Buildx builder's whole state on
+      # the `sticky=docker` EBS disk, snapshotted per repository and branch.
+      # That keeps the Dockerfiles' Gradle `--mount=type=cache` mounts, which no
+      # cache exporter carries: without it every image build resolved Gradle
+      # from scratch, ~3 min in service-moderation (2026-10-29). A `runner`
+      # override has no sticky label, so it skips the mode.
       - name: Enable RunsOn Magic Cache
+        id: runs-on
         if: startsWith(runner.name, 'runs-on--')
         uses: runs-on/action@v2
+        with:
+          sticky_cache: ${{ inputs.runner == '' && 'buildkit' || '' }}
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -160,11 +170,15 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "layer cache: ${from:-none}"
 
+      # The sticky BuildKit state needs RunsOn's builder name and a builder
+      # that survives until the RunsOn post step snapshots it.
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
         with:
+          name: ${{ steps.runs-on.outputs.buildkit-builder }}
           driver: docker-container
           buildkitd-config-inline: ${{ steps.layer_cache.outputs.buildkitd-config }}
+          cleanup: ${{ steps.runs-on.outputs.buildkit-builder == '' || inputs.runner != '' }}
 
       - name: Login to GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -195,7 +209,7 @@ jobs:
 
       # Layer cache: see "Resolve layer cache". PRs read it but never write
       # cache or image tags. Cache mounts (e.g. Gradle dependency mounts) are
-      # not exported either way.
+      # not exported either way; on RunsOn they persist on the sticky disk.
       - name: Build image (pull requests)
         if: github.event_name == 'pull_request'
         uses: docker/build-push-action@v7

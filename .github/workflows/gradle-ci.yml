@@ -90,6 +90,13 @@ jobs:
         run: |
           ./gradlew build --exclude-task test
 
+      # Quarkus Dev Services request container reuse, and Testcontainers ignores
+      # the request unless the runner opts in, so every test profile restart
+      # started fresh containers. The runner is thrown away after the job, so
+      # nothing reused can outlive it.
+      - name: Allow Testcontainers reuse
+        run: echo "testcontainers.reuse.enable=true" >> ~/.testcontainers.properties
+
       - name: Test
         run: |
           ./gradlew test
