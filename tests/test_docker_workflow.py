@@ -13,7 +13,7 @@ def resolve(value, context):
         return value
     def expression(match):
         source = match.group(1).strip()
-        source = re.sub(r'\b(?:github|inputs|steps|env|runner)\.[\w.]+', lambda field: repr(context[field[0]]), source)
+        source = re.sub(r'\b(?:github|inputs|steps|env|runner)\.[\w.-]+', lambda field: repr(context[field[0]]), source)
         # GitHub's format('{0}', x); evaluated as Python's str.format.
         source = re.sub(r'\bformat\(', 'str.format(', source)
         source = source.replace('&&', ' and ').replace('||', ' or ')
@@ -222,6 +222,26 @@ class DockerWorkflowTest(unittest.TestCase):
         self.assertEqual(resolve(job['runs-on'], context), 'ubuntu-24.04')
         context['inputs.runner'] = 'custom-amd64'
         self.assertEqual(resolve(job['runs-on'], context), 'custom-amd64')
+
+    def test_sticky_buildkit_state_only_with_the_default_runs_on_label(self):
+        """The sticky label, the buildkit mode and a builder kept alive for the snapshot go together."""
+        job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']
+        action = next(step for step in job['steps'] if step.get('id') == 'runs-on')
+        buildx = next(step for step in job['steps'] if 'setup-buildx-action' in step.get('uses', ''))
+        self.assertLess(job['steps'].index(action), job['steps'].index(buildx), 'buildkit mode must precede setup-buildx')
+        self.assertEqual(buildx['with']['name'], '${{ steps.runs-on.outputs.buildkit-builder }}')
+        private = {'inputs.runner': '', 'github.event.repository.visibility': 'private',
+                   'github.event.repository.name': 'service-moderation', 'github.run_id': 42,
+                   'steps.runs-on.outputs.buildkit-builder': 'runs-on-buildkit'}
+        self.assertIn('/sticky=docker:', resolve(job['runs-on'], private))
+        self.assertEqual(resolve(action['with']['sticky_cache'], private), 'buildkit')
+        self.assertEqual(resolve(buildx['with']['cleanup'], private), 'False')
+        override = {**private, 'inputs.runner': 'runs-on=42/cpu=8/ram=32'}
+        self.assertEqual(resolve(action['with']['sticky_cache'], override), '')
+        self.assertEqual(resolve(buildx['with']['cleanup'], override), 'True')
+        hosted = {**private, 'github.event.repository.visibility': 'public', 'steps.runs-on.outputs.buildkit-builder': ''}
+        self.assertNotIn('sticky=', resolve(job['runs-on'], hosted))
+        self.assertEqual(resolve(buildx['with']['cleanup'], hosted), 'True')
 
 
 if __name__ == '__main__':
