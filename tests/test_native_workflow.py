@@ -61,7 +61,7 @@ class NativeWorkflowTest(unittest.TestCase):
                 wrapper.write_text("#!/bin/sh\n" + sys.executable + " - <<'PYCHILD'\n" +
                     "import os,pathlib,sys\np=pathlib.Path(os.environ['GRADLE_USER_HOME'])/'gradle.properties'\n" +
                     "values=dict(line.split('=',1) for line in p.read_text().splitlines())\n" +
-                    "assert values=={'github.user':'actor','github.token':'test-secret'}\n" +
+                    "assert values=={'github.user':'actor','github.token':'test-secret','org.gradle.jvmargs':'-Xmx4g -XX:MaxMetaspaceSize=1g'}\n" +
                     "assert p.stat().st_mode & 0o077 == 0\n" +
                     "sys.exit(" + str(exit_code) + ")\nPYCHILD\n")
                 wrapper.chmod(0o755)

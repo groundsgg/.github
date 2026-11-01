@@ -54,7 +54,7 @@ jobs:
           umask 077
           mkdir -p "$GRADLE_USER_HOME"
           trap 'rm -f "$GRADLE_USER_HOME/gradle.properties"' EXIT
-          printf 'github.user=%s\ngithub.token=%s\n' "$GITHUB_ACTOR" "$PACKAGES_TOKEN" > "$GRADLE_USER_HOME/gradle.properties"
+          printf 'github.user=%s\ngithub.token=%s\norg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g\n' "$GITHUB_ACTOR" "$PACKAGES_TOKEN" > "$GRADLE_USER_HOME/gradle.properties"
           ./gradlew --no-daemon -Pkotlin.compiler.execution.strategy=in-process test
           printf 'NATIVE_IMAGE_PREFIX=grounds/%s\n' "${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
           python3 - <<'PY' >> "$GITHUB_ENV"
@@ -119,7 +119,7 @@ jobs:
           umask 077
           mkdir -p "$GRADLE_USER_HOME"
           trap 'rm -f "$GRADLE_USER_HOME/gradle.properties"' EXIT
-          printf 'github.user=%s\ngithub.token=%s\n' "$GITHUB_ACTOR" "$PACKAGES_TOKEN" > "$GRADLE_USER_HOME/gradle.properties"
+          printf 'github.user=%s\ngithub.token=%s\norg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g\n' "$GITHUB_ACTOR" "$PACKAGES_TOKEN" > "$GRADLE_USER_HOME/gradle.properties"
           bash -euo pipefail -c "$VERIFY_COMMAND"
       - name: Publish verified native images
         if: github.event_name != 'pull_request'
