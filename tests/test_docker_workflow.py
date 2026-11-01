@@ -196,7 +196,7 @@ class DockerWorkflowTest(unittest.TestCase):
                     missing = resolve(runs_on, {**base, 'github.event.repository.visibility': '',
                                                 'github.event.repository.name': ''}).strip()
                     self.assertEqual(missing, 'ubuntu-24.04')
-        self.assertEqual(checked, 10, 'every repo-routed job should target RunsOn')
+        self.assertEqual(checked, 11, 'every repo-routed job should target RunsOn')
 
     def test_gradle_caches_are_used_on_hosted_runners_only(self):
         """From hbr1 the GHA cache stalled at 0 bytes and crawled at ~1 MB/s (2026-09-30).
