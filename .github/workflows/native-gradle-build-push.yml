@@ -1,0 +1,129 @@
+name: Native Gradle Build and Push
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: Optional runner label; defaults to the standard 16 GiB native-build runner.
+        type: string
+        default: ''
+      targets:
+        description: Space-separated Dockerfile.native targets (native-micro and optionally native-distroless).
+        type: string
+        default: native-micro
+      verify-command:
+        description: Optional repository-owned command for packaged-image contracts, after building and before publishing.
+        type: string
+        default: ''
+    secrets:
+      PACKAGES_TOKEN:
+        description: Optional access to private cross-repository Maven packages.
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: native-build-${{ github.repository }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  native-build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ${{ inputs.runner != '' && inputs.runner || (github.event.repository.visibility == 'public' && 'ubuntu-24.04') || (github.event.repository.name && format('runs-on={0}/cpu=4/ram=16/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64/extras=s3-cache/sticky=docker:30gb', github.run_id)) || 'ubuntu-24.04' }}
+    timeout-minutes: 60
+    env:
+      PACKAGES_TOKEN: ${{ secrets.PACKAGES_TOKEN || secrets.GITHUB_TOKEN }}
+      NATIVE_TARGETS: ${{ inputs.targets }}
+      VERIFY_COMMAND: ${{ inputs.verify-command }}
+      DOCKER_BUILD_RECORD_UPLOAD: false
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-disabled: ${{ runner.environment == 'self-hosted' }}
+      - uses: docker/setup-buildx-action@v4
+      - name: Unit tests and immutable build identity
+        run: |
+          ./gradlew --no-daemon -Pgithub.user="$GITHUB_ACTOR" -Pgithub.token="$PACKAGES_TOKEN" \
+            -Pkotlin.compiler.execution.strategy=in-process test
+          printf 'NATIVE_IMAGE_PREFIX=grounds/%s\n' "${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import hashlib, os, pathlib, subprocess
+          digest = hashlib.sha256()
+          paths = subprocess.check_output(['git', 'ls-files', '-cz', '--others', '--exclude-standard']).split(b'\0')
+          for raw in sorted(set(paths)):
+              if raw:
+                  path = pathlib.Path(os.fsdecode(raw))
+                  if path.is_file():
+                      digest.update(raw + b'\0' + path.read_bytes())
+          print('BUILD_SOURCE_SHA256=' + digest.hexdigest())
+          PY
+      - name: Build native runtime targets
+        run: |
+          test -n "$NATIVE_TARGETS"
+          for target in $NATIVE_TARGETS; do
+            case "$target" in native-micro|native-distroless) ;; *) printf 'Unsupported native target: %s\n' "$target" >&2; exit 2 ;; esac
+            docker buildx build --load --platform linux/amd64 -f Dockerfile.native \
+              --target "$target" --build-arg GITHUB_USER="$GITHUB_ACTOR" \
+              --build-arg BUILD_COMMIT="$GITHUB_SHA" --build-arg BUILD_SOURCE_SHA256="$BUILD_SOURCE_SHA256" \
+              --secret id=github_token,env=PACKAGES_TOKEN -t "$NATIVE_IMAGE_PREFIX:$target-pilot" .
+          done
+      - name: Verify native binaries and image identity
+        run: |
+          python3 - <<'PYVERIFY'
+          import hashlib, json, os, pathlib, subprocess, tempfile
+          expected = None
+          for target in os.environ['NATIVE_TARGETS'].split():
+              tag = os.environ['NATIVE_IMAGE_PREFIX'] + ':' + target + '-pilot'
+              info = json.loads(subprocess.check_output(['docker', 'image', 'inspect', tag]))[0]
+              assert (info['Os'], info['Architecture']) == ('linux', 'amd64'), tag
+              assert info['Config']['User'].split(':')[0] not in ('', '0', 'root'), tag
+              labels = info['Config']['Labels']
+              assert labels['org.opencontainers.image.revision'] == os.environ['GITHUB_SHA'], tag
+              assert labels['gg.grounds.source-tree-sha256'] == os.environ['BUILD_SOURCE_SHA256'], tag
+              container = subprocess.check_output(['docker', 'create', tag], text=True).strip()
+              try:
+                  with tempfile.TemporaryDirectory() as tmp:
+                      root = pathlib.Path(tmp)
+                      for name in ('application', 'application.sha256'):
+                          subprocess.run(['docker', 'cp', container + ':/deployments/' + name, str(root / name)], check=True)
+                      with (root / 'application').open('rb') as binary:
+                          digest = hashlib.file_digest(binary, 'sha256').hexdigest()
+                      assert digest == (root / 'application.sha256').read_text().split()[0], tag
+                      assert expected is None or digest == expected, 'Runtime targets must use the same native binary'
+                      expected = digest
+                      print(target + ' binary sha256=' + digest)
+              finally:
+                  subprocess.run(['docker', 'rm', container], check=True, stdout=subprocess.DEVNULL)
+          PYVERIFY
+      - name: Packaged-image contracts
+        if: inputs.verify-command != ''
+        run: |
+          env "ORG_GRADLE_PROJECT_github.user=$GITHUB_ACTOR" "ORG_GRADLE_PROJECT_github.token=$PACKAGES_TOKEN" \
+            bash -euo pipefail -c "$VERIFY_COMMAND"
+      - name: Publish verified native images
+        if: github.event_name != 'pull_request'
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          for target in $NATIVE_TARGETS; do
+            alias_args=()
+            if [ "$target" = native-micro ]; then alias_args=(-t "ghcr.io/$GITHUB_REPOSITORY:native-sha-$GITHUB_SHA"); fi
+            docker buildx build --push --platform linux/amd64 -f Dockerfile.native \
+              --target "$target" --build-arg GITHUB_USER="$GITHUB_ACTOR" \
+              --build-arg BUILD_COMMIT="$GITHUB_SHA" --build-arg BUILD_SOURCE_SHA256="$BUILD_SOURCE_SHA256" \
+              --secret id=github_token,env=PACKAGES_TOKEN --sbom=true --provenance=mode=max \
+              -t "ghcr.io/$GITHUB_REPOSITORY:$target-sha-$GITHUB_SHA" "${alias_args[@]}" .
+          done
+      - name: Summary
+        if: always()
+        run: |
+          printf 'Native targets: `%s`\n\nCommit: `%s`\n\nNo deployment is performed by this workflow.\n' \
+            "$NATIVE_TARGETS" "$GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"

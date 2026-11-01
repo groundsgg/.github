@@ -7,6 +7,8 @@ on:
       - '.github/workflows/platform-test-preview.yml'
       - '.github/workflows/docker-workflow-contract.yml'
       - 'tests/test_docker_workflow.py'
+      - 'tests/test_native_workflow.py'
+      - '.github/workflows/native-gradle-build-push.yml'
       - 'tests/docker-smoke/**'
   push:
     branches: [main]
@@ -15,6 +17,8 @@ on:
       - '.github/workflows/platform-test-preview.yml'
       - '.github/workflows/docker-workflow-contract.yml'
       - 'tests/test_docker_workflow.py'
+      - 'tests/test_native_workflow.py'
+      - '.github/workflows/native-gradle-build-push.yml'
       - 'tests/docker-smoke/**'
 
 permissions:
