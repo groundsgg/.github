@@ -22,6 +22,12 @@
 - [ ] Manual testing completed
 - [ ] New tests added for new functionality
 
+## Risk
+<!-- What could break, and for whom? Call out CI workflows, infra (Pulumi, charts), auth, data migrations and anything stateful -->
+
+## How to revert
+<!-- "git revert" is enough for most changes. Otherwise list the extra steps: re-pin a version, restore state, re-run a migration backwards, manual cleanup -->
+
 ## Checklist
 <!-- Mark completed items with an 'x' -->
 - [ ] I have performed a self-review of my own code
