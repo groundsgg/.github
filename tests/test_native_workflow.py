@@ -50,6 +50,66 @@ class NativeWorkflowTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(calls, [])
 
+    def run_publish(self, ref, targets='native-micro native-distroless'):
+        workflow = Path(__file__).parents[1] / '.github/workflows/native-gradle-build-push.yml'
+        steps = yaml.safe_load(workflow.read_text())['jobs']['native-build']['steps']
+        step = next(s for s in steps if s.get('name') == 'Publish verified native images')
+        self.assertEqual(step['if'], "github.event_name != 'pull_request'")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docker = root / 'docker'
+            docker.write_text('#!' + sys.executable + "\nimport sys,os,json\nargs=sys.argv[1:]\nstdin=sys.stdin.read() if args[0]=='login' else ''\nwith open(os.environ['DOCKER_CALLS'],'a') as f:f.write(json.dumps({'args':args,'stdin':stdin})+'\\n')\n")
+            docker.chmod(0o755)
+            calls = root / 'calls'
+            result = subprocess.run(['bash', '-euo', 'pipefail', '-c', step['run']], capture_output=True, text=True,
+                env={**os.environ, 'PATH': str(root) + ':' + os.environ['PATH'], 'DOCKER_CALLS': str(calls),
+                     'GITHUB_REF': ref, 'GITHUB_SHA': 'a' * 40, 'GITHUB_ACTOR': 'actor',
+                     'GITHUB_REPOSITORY': 'groundsgg/service-example', 'NATIVE_TARGETS': targets,
+                     'NATIVE_IMAGE_PREFIX': 'grounds/service-example', 'REGISTRY_TOKEN': 'fixture-token'})
+            records = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
+            return result, records
+
+    def assert_publish_aliases(self, ref, standard):
+        result, calls = self.run_publish(ref)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        repo = 'ghcr.io/groundsgg/service-example:'
+        sha = 'a' * 40
+        expected = {repo + 'native-micro-sha-' + sha, repo + 'native-sha-' + sha,
+                    repo + 'native-distroless-sha-' + sha} | {repo + tag for tag in standard}
+        tag_calls = [call['args'] for call in calls if call['args'][0] == 'tag']
+        push_calls = [call['args'][1] for call in calls if call['args'][0] == 'push']
+        self.assertEqual({call[2] for call in tag_calls}, expected)
+        self.assertEqual(set(push_calls), expected)
+        for call in tag_calls:
+            expected_source = 'grounds/service-example:native-distroless-pilot' if 'native-distroless-sha-' in call[2] else 'grounds/service-example:native-micro-pilot'
+            self.assertEqual(call[1], expected_source)
+        login = next(call for call in calls if call['args'][0] == 'login')
+        self.assertIn('--password-stdin', login['args'])
+        self.assertEqual(login['stdin'], 'fixture-token')
+        self.assertNotIn('fixture-token', json.dumps([call['args'] for call in calls]))
+        self.assertFalse(any(call['args'][0] in ('build', 'buildx') for call in calls))
+
+    def test_publication_aliases_use_the_verified_micro_image(self):
+        for ref, aliases in [('refs/heads/main', {'edge', 'sha-aaaaaaa'}),
+                             ('refs/tags/v1.2.3', {'1.2.3', 'latest'}),
+                             ('refs/tags/v1.2.3-rc.1', {'1.2.3-rc.1'}),
+                             ('refs/heads/feature/test', set())]:
+            with self.subTest(ref=ref):
+                self.assert_publish_aliases(ref, aliases)
+
+    def test_invalid_release_versions_fail_before_docker_login_or_push(self):
+        for ref in ['refs/tags/v1.2', 'refs/tags/v01.2.3', 'refs/tags/v1.2.3-01',
+                    'refs/tags/v1.2.3+metadata', 'refs/tags/v1.2.3;malicious']:
+            with self.subTest(ref=ref):
+                result, calls = self.run_publish(ref)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(calls, [])
+
+    def test_standard_aliases_require_a_verified_micro_target(self):
+        result, calls = self.run_publish('refs/heads/main', 'native-distroless')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
+
     def test_runtime_hook_receives_file_credentials_and_always_removes_them(self):
         workflow = Path(__file__).parents[1] / '.github/workflows/native-gradle-build-push.yml'
         steps = yaml.safe_load(workflow.read_text())['jobs']['native-build']['steps']

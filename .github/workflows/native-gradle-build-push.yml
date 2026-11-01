@@ -126,6 +126,39 @@ jobs:
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          aliases=()
+          case "$GITHUB_REF" in
+            refs/heads/main)
+              aliases=(edge "sha-${GITHUB_SHA:0:7}")
+              ;;
+            refs/tags/v*)
+              version="${GITHUB_REF#refs/tags/v}"
+              semver='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-([0-9A-Za-z-]+)(\.[0-9A-Za-z-]+)*)?$'
+              if [[ ! "$version" =~ $semver || ${#version} -gt 128 ]]; then
+                echo 'Invalid native release version' >&2
+                exit 1
+              fi
+              if [[ "$version" == *-* ]]; then
+                prerelease="${version#*-}"
+                IFS='.' read -r -a identifiers <<< "$prerelease"
+                for identifier in "${identifiers[@]}"; do
+                  if [[ "$identifier" =~ ^[0-9]+$ && "$identifier" =~ ^0[0-9]+$ ]]; then
+                    echo 'Invalid numeric prerelease identifier' >&2
+                    exit 1
+                  fi
+                done
+                aliases=("$version")
+              else
+                aliases=("$version" latest)
+              fi
+              ;;
+          esac
+          if ((${#aliases[@]})); then
+            case " $NATIVE_TARGETS " in
+              *' native-micro '*) ;;
+              *) echo 'Standard aliases require a verified native-micro image' >&2; exit 1 ;;
+            esac
+          fi
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           for target in $NATIVE_TARGETS; do
             image="ghcr.io/$GITHUB_REPOSITORY:$target-sha-$GITHUB_SHA"
@@ -135,6 +168,11 @@ jobs:
               alias="ghcr.io/$GITHUB_REPOSITORY:native-sha-$GITHUB_SHA"
               docker tag "$NATIVE_IMAGE_PREFIX:$target-pilot" "$alias"
               docker push "$alias"
+              for tag in "${aliases[@]}"; do
+                alias="ghcr.io/$GITHUB_REPOSITORY:$tag"
+                docker tag "$NATIVE_IMAGE_PREFIX:$target-pilot" "$alias"
+                docker push "$alias"
+              done
             fi
           done
       - name: Summary
