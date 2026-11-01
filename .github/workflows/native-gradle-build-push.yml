@@ -50,8 +50,12 @@ jobs:
       - uses: docker/setup-buildx-action@v4
       - name: Unit tests and immutable build identity
         run: |
-          ./gradlew --no-daemon -Pgithub.user="$GITHUB_ACTOR" -Pgithub.token="$PACKAGES_TOKEN" \
-            -Pkotlin.compiler.execution.strategy=in-process test
+          test ! -e "$GRADLE_USER_HOME/gradle.properties"
+          umask 077
+          mkdir -p "$GRADLE_USER_HOME"
+          trap 'rm -f "$GRADLE_USER_HOME/gradle.properties"' EXIT
+          printf 'github.user=%s\ngithub.token=%s\n' "$GITHUB_ACTOR" "$PACKAGES_TOKEN" > "$GRADLE_USER_HOME/gradle.properties"
+          ./gradlew --no-daemon -Pkotlin.compiler.execution.strategy=in-process test
           printf 'NATIVE_IMAGE_PREFIX=grounds/%s\n' "${GITHUB_REPOSITORY#*/}" >> "$GITHUB_ENV"
           python3 - <<'PY' >> "$GITHUB_ENV"
           import hashlib, os, pathlib, subprocess
@@ -111,8 +115,12 @@ jobs:
       - name: Packaged-image contracts
         if: inputs.verify-command != ''
         run: |
-          env "ORG_GRADLE_PROJECT_github.user=$GITHUB_ACTOR" "ORG_GRADLE_PROJECT_github.token=$PACKAGES_TOKEN" \
-            bash -euo pipefail -c "$VERIFY_COMMAND"
+          test ! -e "$GRADLE_USER_HOME/gradle.properties"
+          umask 077
+          mkdir -p "$GRADLE_USER_HOME"
+          trap 'rm -f "$GRADLE_USER_HOME/gradle.properties"' EXIT
+          printf 'github.user=%s\ngithub.token=%s\n' "$GITHUB_ACTOR" "$PACKAGES_TOKEN" > "$GRADLE_USER_HOME/gradle.properties"
+          bash -euo pipefail -c "$VERIFY_COMMAND"
       - name: Publish verified native images
         if: github.event_name != 'pull_request'
         env:

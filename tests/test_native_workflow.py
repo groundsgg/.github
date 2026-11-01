@@ -50,6 +50,28 @@ class NativeWorkflowTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(calls, [])
 
+    def test_runtime_hook_receives_file_credentials_and_always_removes_them(self):
+        workflow = Path(__file__).parents[1] / '.github/workflows/native-gradle-build-push.yml'
+        steps = yaml.safe_load(workflow.read_text())['jobs']['native-build']['steps']
+        script = next(s['run'] for s in steps if s.get('name') == 'Packaged-image contracts')
+        for exit_code in [0, 17]:
+            with self.subTest(exit_code=exit_code), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                wrapper = root / 'gradlew'
+                wrapper.write_text("#!/bin/sh\n" + sys.executable + " - <<'PYCHILD'\n" +
+                    "import os,pathlib,sys\np=pathlib.Path(os.environ['GRADLE_USER_HOME'])/'gradle.properties'\n" +
+                    "values=dict(line.split('=',1) for line in p.read_text().splitlines())\n" +
+                    "assert values=={'github.user':'actor','github.token':'test-secret'}\n" +
+                    "assert p.stat().st_mode & 0o077 == 0\n" +
+                    "sys.exit(" + str(exit_code) + ")\nPYCHILD\n")
+                wrapper.chmod(0o755)
+                result = subprocess.run(['bash','-euo','pipefail','-c',script],cwd=root,capture_output=True,text=True,
+                    env={**os.environ,'GRADLE_USER_HOME':str(root/'gradle-home'),'GITHUB_ACTOR':'actor',
+                         'PACKAGES_TOKEN':'test-secret','VERIFY_COMMAND':'./gradlew runtimeTest'})
+                self.assertEqual(result.returncode,exit_code,result.stderr)
+                self.assertFalse((root/'gradle-home/gradle.properties').exists())
+                self.assertNotIn('test-secret',result.stdout+result.stderr)
+
 
 if __name__ == '__main__':
     unittest.main()
