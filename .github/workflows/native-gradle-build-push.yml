@@ -66,14 +66,20 @@ jobs:
           PY
       - name: Build native runtime targets
         run: |
-          test -n "$NATIVE_TARGETS"
-          for target in $NATIVE_TARGETS; do
-            case "$target" in native-micro|native-distroless) ;; *) printf 'Unsupported native target: %s\n' "$target" >&2; exit 2 ;; esac
-            docker buildx build --load --platform linux/amd64 -f Dockerfile.native \
-              --target "$target" --build-arg GITHUB_USER="$GITHUB_ACTOR" \
-              --build-arg BUILD_COMMIT="$GITHUB_SHA" --build-arg BUILD_SOURCE_SHA256="$BUILD_SOURCE_SHA256" \
-              --secret id=github_token,env=PACKAGES_TOKEN -t "$NATIVE_IMAGE_PREFIX:$target-pilot" .
-          done
+          python3 - <<'PYBAKE' > "$RUNNER_TEMP/native-bake.json"
+          import json, os
+          targets = os.environ['NATIVE_TARGETS'].split()
+          if not targets or any(t not in ('native-micro', 'native-distroless') for t in targets):
+              raise SystemExit('Select native-micro and/or native-distroless')
+          args = {key: os.environ[value] for key, value in (
+              ('GITHUB_USER', 'GITHUB_ACTOR'), ('BUILD_COMMIT', 'GITHUB_SHA'), ('BUILD_SOURCE_SHA256', 'BUILD_SOURCE_SHA256'))}
+          print(json.dumps({'group': {'default': {'targets': targets}}, 'target': {
+              target: {'context': '.', 'dockerfile': 'Dockerfile.native', 'target': target, 'platforms': ['linux/amd64'],
+                       'args': args, 'secret': ['id=github_token,env=PACKAGES_TOKEN'],
+                       'tags': [os.environ['NATIVE_IMAGE_PREFIX'] + ':' + target + '-pilot']}
+              for target in targets}}))
+          PYBAKE
+          docker buildx bake --file "$RUNNER_TEMP/native-bake.json" --load
       - name: Verify native binaries and image identity
         run: |
           python3 - <<'PYVERIFY'
@@ -114,13 +120,14 @@ jobs:
         run: |
           printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           for target in $NATIVE_TARGETS; do
-            alias_args=()
-            if [ "$target" = native-micro ]; then alias_args=(-t "ghcr.io/$GITHUB_REPOSITORY:native-sha-$GITHUB_SHA"); fi
-            docker buildx build --push --platform linux/amd64 -f Dockerfile.native \
-              --target "$target" --build-arg GITHUB_USER="$GITHUB_ACTOR" \
-              --build-arg BUILD_COMMIT="$GITHUB_SHA" --build-arg BUILD_SOURCE_SHA256="$BUILD_SOURCE_SHA256" \
-              --secret id=github_token,env=PACKAGES_TOKEN --sbom=true --provenance=mode=max \
-              -t "ghcr.io/$GITHUB_REPOSITORY:$target-sha-$GITHUB_SHA" "${alias_args[@]}" .
+            image="ghcr.io/$GITHUB_REPOSITORY:$target-sha-$GITHUB_SHA"
+            docker tag "$NATIVE_IMAGE_PREFIX:$target-pilot" "$image"
+            docker push "$image"
+            if [ "$target" = native-micro ]; then
+              alias="ghcr.io/$GITHUB_REPOSITORY:native-sha-$GITHUB_SHA"
+              docker tag "$NATIVE_IMAGE_PREFIX:$target-pilot" "$alias"
+              docker push "$alias"
+            fi
           done
       - name: Summary
         if: always()
