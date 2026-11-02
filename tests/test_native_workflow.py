@@ -50,7 +50,7 @@ class NativeWorkflowTest(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(calls, [])
 
-    def run_publish(self, ref, targets='native-micro native-distroless'):
+    def run_publish(self, ref, targets='native-micro native-distroless', alias_prefix=''):
         workflow = Path(__file__).parents[1] / '.github/workflows/native-gradle-build-push.yml'
         steps = yaml.safe_load(workflow.read_text())['jobs']['native-build']['steps']
         step = next(s for s in steps if s.get('name') == 'Publish verified native images')
@@ -65,12 +65,13 @@ class NativeWorkflowTest(unittest.TestCase):
                 env={**os.environ, 'PATH': str(root) + ':' + os.environ['PATH'], 'DOCKER_CALLS': str(calls),
                      'GITHUB_REF': ref, 'GITHUB_SHA': 'a' * 40, 'GITHUB_ACTOR': 'actor',
                      'GITHUB_REPOSITORY': 'groundsgg/service-example', 'NATIVE_TARGETS': targets,
-                     'NATIVE_IMAGE_PREFIX': 'grounds/service-example', 'REGISTRY_TOKEN': 'fixture-token'})
+                     'NATIVE_IMAGE_PREFIX': 'grounds/service-example', 'REGISTRY_TOKEN': 'fixture-token',
+                     'NATIVE_ALIAS_PREFIX': alias_prefix})
             records = [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
             return result, records
 
-    def assert_publish_aliases(self, ref, standard):
-        result, calls = self.run_publish(ref)
+    def assert_publish_aliases(self, ref, standard, alias_prefix=''):
+        result, calls = self.run_publish(ref, alias_prefix=alias_prefix)
         self.assertEqual(result.returncode, 0, result.stderr)
         repo = 'ghcr.io/groundsgg/service-example:'
         sha = 'a' * 40
@@ -104,6 +105,26 @@ class NativeWorkflowTest(unittest.TestCase):
                 result, calls = self.run_publish(ref)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(calls, [])
+
+    def test_separate_native_aliases_preserve_existing_jvm_release_tags(self):
+        for ref, aliases in [('refs/heads/main', {'native-edge', 'native-sha-aaaaaaa'}),
+                             ('refs/tags/v1.2.3', {'native-1.2.3', 'native-latest'}),
+                             ('refs/tags/v1.2.3-rc.1', {'native-1.2.3-rc.1'}),
+                             ('refs/heads/feature/test', set())]:
+            with self.subTest(ref=ref):
+                self.assert_publish_aliases(ref, aliases, alias_prefix='native-')
+
+    def test_invalid_alias_prefix_fails_before_registry_access(self):
+        for prefix in ['../', '-bad', 'bad space', 'bad;command', 'A' * 33]:
+            with self.subTest(prefix=prefix):
+                result, calls = self.run_publish('refs/tags/v1.2.3', alias_prefix=prefix)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(calls, [])
+
+    def test_prefixed_release_tag_length_is_validated_before_registry_access(self):
+        result, calls = self.run_publish('refs/tags/v1.2.3-' + 'x' * 118, alias_prefix='native-')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(calls, [])
 
     def test_standard_aliases_require_a_verified_micro_target(self):
         result, calls = self.run_publish('refs/heads/main', 'native-distroless')

@@ -15,6 +15,10 @@ on:
         description: Optional repository-owned command for packaged-image contracts, after building and before publishing.
         type: string
         default: ''
+      alias-prefix:
+        description: Optional standard-tag prefix for repositories that also release a separate JVM worker image (for example native-).
+        type: string
+        default: ''
     secrets:
       PACKAGES_TOKEN:
         description: Optional access to private cross-repository Maven packages.
@@ -125,7 +129,13 @@ jobs:
         if: github.event_name != 'pull_request'
         env:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NATIVE_ALIAS_PREFIX: ${{ inputs.alias-prefix }}
         run: |
+          prefix="${NATIVE_ALIAS_PREFIX:-}"
+          if [[ -n "$prefix" && ! "$prefix" =~ ^[a-z0-9][a-z0-9_.-]{0,31}$ ]]; then
+            echo 'Invalid native alias prefix' >&2
+            exit 1
+          fi
           aliases=()
           case "$GITHUB_REF" in
             refs/heads/main)
@@ -153,6 +163,13 @@ jobs:
               fi
               ;;
           esac
+          for index in "${!aliases[@]}"; do
+            aliases[$index]="$prefix${aliases[$index]}"
+            if ((${#aliases[$index]} > 128)); then
+              echo 'Native release alias exceeds Docker tag length' >&2
+              exit 1
+            fi
+          done
           if ((${#aliases[@]})); then
             case " $NATIVE_TARGETS " in
               *' native-micro '*) ;;
