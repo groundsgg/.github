@@ -50,10 +50,16 @@ jobs:
     timeout-minutes: 30
     steps:
       # RunsOn (AWS) runners: routes the Actions cache to RunsOn's S3-backed
-      # Magic Cache. Needs `extras=s3-cache` in the runner label.
+      # Magic Cache and serves Gradle's HTTP build cache from the same bucket,
+      # so a job reuses the task outputs of its branch, its base and main. Gradle
+      # only uses it with the build cache on, hence `--build-cache` below. Needs
+      # `extras=s3-cache` in the runner label and RunsOn v3.6.0; on an older
+      # stack the action warns and the build runs without the remote cache.
       - name: Enable RunsOn Magic Cache
         if: startsWith(runner.name, 'runs-on--')
         uses: runs-on/action@v2
+        with:
+          remote_cache: gradle
 
       - name: Checkout
         uses: actions/checkout@v7
@@ -87,7 +93,7 @@ jobs:
           } > ~/.gradle/gradle.properties
 
       - name: Build
-        run: ./gradlew build -Pversion=${{ github.ref_name }}
+        run: ./gradlew build --build-cache -Pversion=${{ github.ref_name }}
 
       # Rewritten deliberately, and this cannot be folded into the step above.
       # Publishing targets *this* repository's registry, which the per-job
@@ -113,4 +119,4 @@ jobs:
           # Remove the leading 'v' from the tag to get the version number
           version_override="${tag_name#v}"
 
-          ./gradlew publish -PversionOverride="$version_override"
+          ./gradlew publish --build-cache -PversionOverride="$version_override"
