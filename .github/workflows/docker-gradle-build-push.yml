@@ -44,7 +44,7 @@ jobs:
           || (github.event.repository.visibility == 'public'
               && 'ubuntu-24.04')
           || (github.event.repository.name
-              && format('runs-on={0}/cpu=4/ram=16/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64/extras=s3-cache/sticky=docker:30gb', github.run_id))
+              && format('runs-on={0}/cpu=4/ram=16/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64/extras=s3-cache/sticky=docker:30gb:lazy-init', github.run_id))
           || 'ubuntu-24.04' }}
     # Cold ARC builds can exceed 30m downloading builder/runtime base images
     # even after Gradle succeeds. Keep the default repo-ARC path bounded at
@@ -74,12 +74,20 @@ jobs:
       # cache exporter carries: without it every image build resolved Gradle
       # from scratch, ~3 min in service-moderation (2026-10-29). A `runner`
       # override has no sticky label, so it skips the mode.
+      #
+      # Only the default branch saves the disk. Every other ref (pull request,
+      # tag, release-please branch) restores the default branch's snapshot and
+      # discards its changes: saving them gave each ref a 30 GB lineage that
+      # was never read again (177 snapshots by 2026-11-10). `lazy-init` skips
+      # EBS's provisioned initialization charge on restore, the largest sticky
+      # cost line in November.
       - name: Enable RunsOn Magic Cache
         id: runs-on
         if: startsWith(runner.name, 'runs-on--')
         uses: runs-on/action@v2
         with:
           sticky_cache: ${{ inputs.runner == '' && 'buildkit' || '' }}
+          sticky_save: ${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
 
       - name: Checkout
         uses: actions/checkout@v7
