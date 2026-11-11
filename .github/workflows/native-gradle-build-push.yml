@@ -34,7 +34,9 @@ concurrency:
 
 jobs:
   native-build:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    # Fork PRs get no secrets. Release Please PRs only bump the version and
+    # CHANGELOG; the merge builds the same tree (see docker-gradle-build-push).
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !startsWith(github.head_ref, 'release-please--'))
     runs-on: ${{ inputs.runner != '' && inputs.runner || (github.event.repository.visibility == 'public' && 'ubuntu-24.04') || (github.event.repository.name && format('runs-on={0}/cpu=4/ram=16/family=m8a+m7a+m8i/spot=capacity-optimized/image=ubuntu24-full-x64/extras=s3-cache/sticky=docker:30gb:lazy-init', github.run_id)) || 'ubuntu-24.04' }}
     timeout-minutes: 60
     env:

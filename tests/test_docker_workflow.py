@@ -17,6 +17,7 @@ def resolve(value, context):
         # GitHub's format('{0}', x); evaluated as Python's str.format.
         source = re.sub(r'\bformat\(', 'str.format(', source)
         source = source.replace('&&', ' and ').replace('||', ' or ')
+        source = re.sub(r'!(?!=)', ' not ', source)
         source = re.sub(r'\bstartsWith\(', 'starts_with(', source)
         starts_with = lambda text, prefix: str(text).startswith(prefix)
         return str(eval('(' + source + ')', {'__builtins__': {}, 'str': str, 'starts_with': starts_with}, {}))
@@ -214,6 +215,22 @@ class DockerWorkflowTest(unittest.TestCase):
                         self.assertNotEqual(with_['cache'], 'gradle')
                     if uses.startswith('gradle/actions/setup-gradle'):
                         self.assertIn('runner.environment', str(with_['cache-disabled']))
+
+    def test_release_please_prs_build_no_image(self):
+        """Their merge builds the same tree; feature PRs, pushes and tags still build."""
+        for name, job_name in [('docker-gradle-build-push.yml', 'docker-build-push'), ('native-gradle-build-push.yml', 'native-build')]:
+            job = yaml.safe_load((WORKFLOW.parent / name).read_text())['jobs'][job_name]
+            for event, head_ref, head_repo, builds in [
+                ('pull_request', 'release-please--branches--main', 'groundsgg/plugin-chat', False),
+                ('pull_request', 'release-please--branches--main--components--plugin-chat', 'groundsgg/plugin-chat', False),
+                ('pull_request', 'feat/scoped-command-completions', 'groundsgg/plugin-chat', True),
+                ('push', '', '', True),
+            ]:
+                with self.subTest(workflow=name, event=event, head_ref=head_ref):
+                    context = {'github.event_name': event, 'github.head_ref': head_ref,
+                               'github.event.pull_request.head.repo.full_name': head_repo,
+                               'github.repository': 'groundsgg/plugin-chat'}
+                    self.assertEqual(resolve('${{ ' + job['if'] + ' }}', context), str(builds))
 
     def test_runner_override_and_missing_event_payload(self):
         job = yaml.safe_load(WORKFLOW.read_text())['jobs']['docker-build-push']

@@ -39,6 +39,12 @@ jobs:
     # use RunsOn, an ephemeral 4 vCPU / 16 GB spot instance in our AWS account
     # (eu-central-1), with a sticky disk for the BuildKit state. Missing
     # repository payloads safely fall back to GitHub-hosted.
+    #
+    # Release Please PRs only bump the version and CHANGELOG, and merging one
+    # builds the same tree on the default branch anyway. Building them cost a
+    # sticky-disk restore per push (plugin-chat: 17 of 85 image builds in
+    # 12 days). A job skipped by `if` still passes required checks.
+    if: github.event_name != 'pull_request' || !startsWith(github.head_ref, 'release-please--')
     runs-on: >-
       ${{ inputs.runner != '' && inputs.runner
           || (github.event.repository.visibility == 'public'
